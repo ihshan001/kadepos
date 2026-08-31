@@ -23,7 +23,7 @@ import com.example.ui.util.CurrencyUtils
 import kotlin.math.roundToLong
 
 /**
- * The one way money is entered anywhere in KadePOS.
+ * The one way money is entered anywhere in Arro-POS.
  *
  * Settling a customer's credit, paying a supplier, recording an expense and
  * receiving stock are all the same action to a shop owner: type a number and
@@ -49,7 +49,7 @@ fun MoneySheet(
     suggestedAmount: Double? = null,
     suggestedLabel: String = "Pay all",
     maxAmount: Double? = null,
-    accent: Color = BrandTealPrimary,
+    accent: Color = BrandGoldPrimary,
     footer: (@Composable () -> Unit)? = null
 ) {
     var digits by remember { mutableStateOf("") }
@@ -85,7 +85,7 @@ fun MoneySheet(
                 CurrencyUtils.formatLkr(amount),
                 fontSize = 40.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (tooMuch) StatusRed else accent,
+                color = if (tooMuch) StatusRed else BrandGoldDark,
                 modifier = Modifier.testTag("money_amount")
             )
 
@@ -121,7 +121,7 @@ fun MoneySheet(
                     shortcuts.forEach { (label, value) ->
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = BrandMintSurface,
+                            color = BrandGoldSurface,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { digits = value.roundToLong().toString() }
@@ -130,7 +130,7 @@ fun MoneySheet(
                                 label,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = accent,
+                                color = BrandGoldDark,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 modifier = Modifier.padding(vertical = 9.dp, horizontal = 4.dp)
@@ -320,15 +320,15 @@ fun MoneyHeadline(
                     label,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = BrandOnGold.copy(alpha = 0.85f)
                 )
                 Text(
                     CurrencyUtils.formatLkr(amount),
                     fontSize = 30.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
+                    color = BrandOnGold
                 )
-                Text(caption, fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
+                Text(caption, fontSize = 12.sp, color = BrandOnGold.copy(alpha = 0.85f))
             }
             if (action != null) action()
         }

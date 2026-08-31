@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,10 +31,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ProductEntity
+import com.example.data.model.VariantCatalog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.data.model.Permission
 import com.example.ui.viewmodel.PosViewModel
+
+/** Parent rows only. Child variant lines are edited through the parent, so
+ * they should never appear as standalone catalogue cards. */
+private fun catalogParentRows(products: List<ProductEntity>): List<ProductEntity> =
+    products.filter { !it.isVariant }
+
+/** When a search matches a variant line, show its parent card instead. */
+private fun parentOfVariant(products: List<ProductEntity>, child: ProductEntity): ProductEntity? =
+    child.takeIf { it.isVariant }?.let { c ->
+        products.firstOrNull { !it.isVariant && it.id == c.parentProductId }
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,7 +64,10 @@ fun ProductsScreen(
     }
 
     val products by viewModel.products.collectAsState()
-    val lowStockProducts by viewModel.lowStockProducts.collectAsState()
+
+    // Child variant lines are stock lines, not separate catalogue cards. The
+    // Items grid is the catalogue, so it always starts from parent rows only.
+    val parentRows = remember(products) { catalogParentRows(products) }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") } // ALL, FAVOURITES, LOW_STOCK, OUT_OF_STOCK, or category name
@@ -58,35 +75,63 @@ fun ProductsScreen(
     var restockingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val categories = remember(products) {
-        products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+    val categories = remember(parentRows) {
+        buildList {
+            addAll(parentRows.map { it.category }.filter { it.isNotBlank() }.distinct().sorted())
+            addAll(
+                parentRows.filter { it.subCategory.isNotBlank() }
+                    .map { listOf(it.category, it.subCategory).filter { it.isNotBlank() }.joinToString(" > ") }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+            )
+        }
     }
 
-    val filteredProducts = remember(products, searchQuery, selectedFilter) {
-        products.filter { p ->
-            val matchFilter = when (selectedFilter) {
+    val filteredProducts = remember(products, parentRows, searchQuery, selectedFilter) {
+        val base = parentRows
+        val matches: (ProductEntity) -> Boolean = { p ->
+            p.name.contains(searchQuery, ignoreCase = true) ||
+                p.barcode.contains(searchQuery, ignoreCase = true) ||
+                p.sku.contains(searchQuery, ignoreCase = true) ||
+                p.category.contains(searchQuery, ignoreCase = true) ||
+                p.subCategory.contains(searchQuery, ignoreCase = true)
+        }
+        val matchFilter: (ProductEntity) -> Boolean = { p ->
+            val fullPath = listOf(p.category, p.subCategory)
+                .filter { it.isNotBlank() }
+                .joinToString(" > ")
+            when (selectedFilter) {
                 "ALL" -> true
                 "FAVOURITES" -> p.isFavourite
                 "LOW_STOCK" -> p.isTracked && p.currentStock <= p.lowStockThreshold && p.currentStock > 0
                 "OUT_OF_STOCK" -> p.isTracked && p.currentStock <= 0
-                else -> p.category.equals(selectedFilter, ignoreCase = true)
+                else -> p.category.equals(selectedFilter, ignoreCase = true) ||
+                    fullPath.equals(selectedFilter, ignoreCase = true) ||
+                    fullPath.startsWith("$selectedFilter > ")
             }
+        }
 
-            val matchQuery = searchQuery.isBlank() ||
-                    p.name.contains(searchQuery, ignoreCase = true) ||
-                    p.barcode.contains(searchQuery, ignoreCase = true) ||
-                    p.sku.contains(searchQuery, ignoreCase = true) ||
-                    p.category.contains(searchQuery, ignoreCase = true)
-
-            matchFilter && matchQuery
+        if (searchQuery.isNotBlank()) {
+            // If the owner types a variant option name, surface the parent so
+            // the option is reached through the normal variant picker.
+            val parentsOfMatchedVariants = products
+                .filter { it.isVariant && matches(it) }
+                .mapNotNull { parentOfVariant(products, it) }
+                .filter(matchFilter)
+            (base.filter { matchFilter(it) && matches(it) } + parentsOfMatchedVariants)
+                .distinctBy { it.id }
+                .sortedBy { it.name }
+        } else {
+            base.filter(matchFilter)
         }
     }
 
     val totalCatalogValuation = remember(products) {
         products.filter { it.isTracked && it.currentStock > 0 }.sumOf { it.costPrice * it.currentStock }
     }
-    val lowStockCount = remember(products) {
-        products.count { it.isTracked && it.currentStock <= it.lowStockThreshold }
+    val lowStockCount = remember(parentRows) {
+        parentRows.count { it.isTracked && it.currentStock <= it.lowStockThreshold }
     }
 
     Scaffold(
@@ -97,12 +142,12 @@ fun ProductsScreen(
                 title = {
                     Column {
                         Text("Product Catalog & Items", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
-                        Text("${products.size} total items registered", fontSize = 11.sp, color = TextSecondary)
+                        Text("${parentRows.size} catalogue items", fontSize = 11.sp, color = TextSecondary)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showAddDialog = true }, modifier = Modifier.testTag("add_product_top_btn")) {
-                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandTealPrimary, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandGoldPrimary, modifier = Modifier.size(28.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
@@ -111,8 +156,8 @@ fun ProductsScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
+                containerColor = BrandGoldPrimary,
+                contentColor = BrandOnGold,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New Product", fontWeight = FontWeight.Bold) },
                 modifier = Modifier.testTag("add_product_fab")
@@ -144,7 +189,7 @@ fun ProductsScreen(
                             CurrencyUtils.formatLkr(totalCatalogValuation),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = BrandTealPrimary
+                            color = BrandGoldPrimary
                         )
                     }
 
@@ -168,13 +213,13 @@ fun ProductsScreen(
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = BrandMintSurface
+                            color = BrandGoldSurface
                         ) {
                             Text(
-                                "${products.count { it.isFavourite }} Pinned",
+                                "${parentRows.count { it.isFavourite }} Pinned",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandTealDark,
+                                color = BrandGoldDark,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -189,7 +234,7 @@ fun ProductsScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search product name, category, barcode, SKU...", fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(20.dp)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotBlank()) {
                         IconButton(onClick = { searchQuery = "" }) {
@@ -202,7 +247,7 @@ fun ProductsScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextPrimary,
                     unfocusedTextColor = TextPrimary,
-                    focusedBorderColor = BrandTealPrimary,
+                    focusedBorderColor = BrandGoldPrimary,
                     unfocusedBorderColor = LightBorder,
                     focusedContainerColor = LightSurface,
                     unfocusedContainerColor = LightSurface
@@ -220,7 +265,7 @@ fun ProductsScreen(
             ) {
                 item {
                     ProductFilterChip(
-                        label = "All (${products.size})",
+                        label = "All (${parentRows.size})",
                         isSelected = selectedFilter == "ALL",
                         onClick = { selectedFilter = "ALL" }
                     )
@@ -243,7 +288,14 @@ fun ProductsScreen(
                     )
                 }
                 items(categories) { cat ->
-                    val countInCat = products.count { it.category.equals(cat, ignoreCase = true) }
+                    val countInCat = parentRows.count { p ->
+                        val path = listOf(p.category, p.subCategory)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" > ")
+                        p.category.equals(cat, ignoreCase = true) ||
+                            path.equals(cat, ignoreCase = true) ||
+                            path.startsWith("$cat > ")
+                    }
                     ProductFilterChip(
                         label = "$cat ($countInCat)",
                         isSelected = selectedFilter.equals(cat, ignoreCase = true),
@@ -269,7 +321,7 @@ fun ProductsScreen(
                         Button(
                             onClick = { showAddDialog = true },
                             shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -298,8 +350,11 @@ fun ProductsScreen(
     if (showAddDialog || editingProduct != null) {
         ProductEditDialog(
             product = editingProduct,
-            onSave = { id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low, tracked, fav ->
-                viewModel.saveProduct(id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low, tracked, fav)
+            onSave = { id, name, sellPrice, costPrice, barcode, sku, cat, sub, unit, stock, low, tracked, fav, variants ->
+                viewModel.saveProduct(
+                    id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low,
+                    tracked, fav, sub, variants
+                )
                 showAddDialog = false
                 editingProduct = null
             },
@@ -339,14 +394,14 @@ fun ProductFilterChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
     val contentColor = when {
-        isSelected -> Color.White
+        isSelected -> BrandOnGold
         highlightAmber -> StatusAmber
         else -> TextPrimary
     }
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = when {
-            isSelected -> BrandTealPrimary
+            isSelected -> BrandGoldPrimary
             highlightAmber -> StatusAmberBg
             else -> LightSurface
         },
@@ -411,6 +466,10 @@ fun ProductItemCard(
                             fontSize = 14.sp,
                             color = TextPrimary
                         )
+                        if (product.isVariant) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Default.CallSplit, contentDescription = "Variant", tint = TextMuted, modifier = Modifier.size(15.dp))
+                        }
                         if (product.isFavourite) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(Icons.Default.Star, contentDescription = "Favourite", tint = StatusAmber, modifier = Modifier.size(15.dp))
@@ -425,7 +484,10 @@ fun ProductItemCard(
                             color = LightSurfaceVariant
                         ) {
                             Text(
-                                text = product.category.ifBlank { "General" },
+                                text = listOf(product.category, product.subCategory)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" > ")
+                                    .ifBlank { "General" },
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary,
@@ -437,6 +499,25 @@ fun ProductItemCard(
                             Text("EAN: ${product.barcode}", fontSize = 10.sp, color = TextMuted)
                         }
                     }
+
+                    if (product.variants.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(5.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = BrandGoldSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                VariantCatalog.summary(product.variants),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BrandGoldPrimary,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Price & Margin
@@ -445,7 +526,7 @@ fun ProductItemCard(
                         text = CurrencyUtils.formatLkr(product.sellingPrice),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 15.sp,
-                        color = BrandTealPrimary
+                        color = BrandGoldPrimary
                     )
 
                     if (product.costPrice > 0) {
@@ -525,9 +606,9 @@ fun ProductItemCard(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandTealPrimary)
+                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandGoldPrimary)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
                         }
                     }
 
@@ -575,7 +656,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
+                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandGoldPrimary)
                         Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                     IconButton(onClick = onDismiss) {
@@ -588,7 +669,7 @@ fun QuickRestockDialog(
                 // Stock change preview banner
                 Card(
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandMintSurface)
+                    colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -599,7 +680,7 @@ fun QuickRestockDialog(
                             Text("Current Stock", fontSize = 10.sp, color = TextSecondary)
                             Text("${product.currentStock.toInt()} ${product.unit}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(16.dp))
                         Column(horizontalAlignment = Alignment.End) {
                             Text("New Stock Level", fontSize = 10.sp, color = TextSecondary)
                             Text("${projectedStock.toInt()} ${product.unit}", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = StatusGreen)
@@ -635,9 +716,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -655,9 +736,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -676,9 +757,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     singleLine = true
                 )
@@ -692,7 +773,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Total Intake Value:", fontSize = 12.sp, color = TextSecondary)
-                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandTealPrimary)
+                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandGoldPrimary)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -704,7 +785,7 @@ fun QuickRestockDialog(
                         }
                     },
                     enabled = qty > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
@@ -728,11 +809,13 @@ fun ProductEditDialog(
         barcode: String,
         sku: String,
         category: String,
+        subCategory: String,
         unit: String,
         stock: Double,
         lowStock: Double,
         isTracked: Boolean,
-        isFavourite: Boolean
+        isFavourite: Boolean,
+        variants: String
     ) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -744,6 +827,8 @@ fun ProductEditDialog(
     var barcode by remember { mutableStateOf(product?.barcode ?: "") }
     var sku by remember { mutableStateOf(product?.sku ?: "") }
     var category by remember { mutableStateOf(product?.category ?: "General") }
+    var subCategory by remember { mutableStateOf(product?.subCategory ?: "") }
+    var variants by remember { mutableStateOf(product?.variants ?: "") }
     var unit by remember { mutableStateOf(product?.unit ?: "Piece") }
     var stockText by remember { mutableStateOf(product?.currentStock?.toInt()?.toString() ?: "10") }
     var lowStockText by remember { mutableStateOf(product?.lowStockThreshold?.toInt()?.toString() ?: "3") }
@@ -775,7 +860,7 @@ fun ProductEditDialog(
                             text = if (isEdit) "EDIT PRODUCT" else "NEW PRODUCT ENTRY",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.sp,
-                            color = BrandTealPrimary
+                            color = BrandGoldPrimary
                         )
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close")
@@ -796,9 +881,9 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         singleLine = true
                     )
@@ -818,9 +903,9 @@ fun ProductEditDialog(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandTealPrimary,
+                                focusedBorderColor = BrandGoldPrimary,
                                 unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandTealPrimary
+                                cursorColor = BrandGoldPrimary
                             ),
                             singleLine = true
                         )
@@ -836,13 +921,36 @@ fun ProductEditDialog(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandTealPrimary,
+                                focusedBorderColor = BrandGoldPrimary,
                                 unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandTealPrimary
+                                cursorColor = BrandGoldPrimary
                             ),
                             singleLine = true
                         )
                     }
+                }
+
+                // Sub-category / category path. Allows "Main > Sub > Sub" so a
+                // shop never has to flatten a food menu or a dress line.
+                item {
+                    OutlinedTextField(
+                        value = subCategory,
+                        onValueChange = { subCategory = it },
+                        label = { Text("Sub-category (optional)") },
+                        placeholder = { Text("e.g. Rice dishes > Biriyani") },
+                        supportingText = { Text("Use a \">\" between levels for endless nesting.", fontSize = 10.sp) },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandGoldPrimary
+                        ),
+                        singleLine = true
+                    )
                 }
 
                 // Unit Presets quick click
@@ -852,14 +960,14 @@ fun ProductEditDialog(
                             item {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (unit.equals(u, ignoreCase = true)) BrandTealPrimary else LightSurfaceVariant,
+                                    color = if (unit.equals(u, ignoreCase = true)) BrandGoldPrimary else LightSurfaceVariant,
                                     modifier = Modifier.clickable { unit = u }
                                 ) {
                                     Text(
                                         u,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (unit.equals(u, ignoreCase = true)) Color.White else TextPrimary,
+                                        color = if (unit.equals(u, ignoreCase = true)) BrandOnGold else TextPrimary,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -872,7 +980,7 @@ fun ProductEditDialog(
                 item {
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandMintSurface)
+                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -886,9 +994,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandTealPrimary,
+                                        focusedBorderColor = BrandGoldPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandTealPrimary
+                                        cursorColor = BrandGoldPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -904,9 +1012,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandTealPrimary,
+                                        focusedBorderColor = BrandGoldPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandTealPrimary
+                                        cursorColor = BrandGoldPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -920,23 +1028,23 @@ fun ProductEditDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Profit: ${CurrencyUtils.formatLkr(profit)} / unit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
-                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealDark)
+                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldDark)
                                 }
                             }
                         }
                     }
                 }
 
-                // 3. Barcode / SKU
+                // 3. Product code / EAN (manual catalogue field; the sell screen can scan codes)
                 item {
                     OutlinedTextField(
                         value = barcode,
                         onValueChange = { barcode = it },
                         label = { Text("Barcode / EAN") },
-                        placeholder = { Text("Scan or enter barcode") },
+                        placeholder = { Text("Enter barcode / EAN if any") },
                         trailingIcon = {
                             IconButton(onClick = { barcode = "890" + (10000000..99999999).random().toString() }) {
-                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandTealPrimary)
+                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandGoldPrimary)
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -945,11 +1053,48 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         singleLine = true
+                    )
+                }
+
+                // 3.5 Variants / options. If anything is typed here it is not
+                // just stored — the app creates a real product line for each
+                // option, so each one can carry its own price and stock.
+                item {
+                    OutlinedTextField(
+                        value = variants,
+                        onValueChange = { variants = it },
+                        label = { Text("Variants / options (optional)") },
+                        placeholder = { Text("Regular|650\nFull|750") },
+                        supportingText = {
+                            Text(
+                                "One per line as a name, or Name|price. Deep: groups + prices so each choice changes the price.\n" +
+                                    "Example:\n" +
+                                    "Rice: Basmati|Keeri\n" +
+                                    "Portion: Regular|Full\n" +
+                                    "Basmati/Regular|1200\n" +
+                                    "Basmati/Full|1800\n" +
+                                    "Keeri/Regular|1100\n" +
+                                    "Keeri/Full|1700",
+                                fontSize = 10.sp
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandGoldPrimary
+                        ),
+                        minLines = 2,
+                        maxLines = 4
                     )
                 }
 
@@ -985,9 +1130,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandTealPrimary,
+                                            focusedBorderColor = BrandGoldPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandTealPrimary
+                                            cursorColor = BrandGoldPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1003,9 +1148,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandTealPrimary,
+                                            focusedBorderColor = BrandGoldPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandTealPrimary
+                                            cursorColor = BrandGoldPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1049,16 +1194,18 @@ fun ProductEditDialog(
                                     barcode,
                                     sku,
                                     category.ifBlank { "General" },
+                                    subCategory.trim(),
                                     unit.ifBlank { "Piece" },
                                     stock,
                                     low,
                                     isTracked,
-                                    isFavourite
+                                    isFavourite,
+                                    variants.trim()
                                 )
                             }
                         },
                         enabled = name.isNotBlank() && sellPriceText.toDoubleOrNull() != null,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {

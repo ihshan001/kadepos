@@ -29,7 +29,7 @@ import com.example.data.model.SupplierEntity
  * phone. Room needs a compile-time constant here, which is why it lives
  * outside the class.
  */
-const val CURRENT_DB_VERSION = 5
+const val CURRENT_DB_VERSION = 7
 
 /**
  * The whole app runs on this local SQLite database on the phone.

@@ -90,7 +90,7 @@ fun NotificationsScreen(
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = LightSurface,
-                contentColor = BrandTealPrimary
+                contentColor = BrandGoldPrimary
             ) {
                 Tab(
                     selected = selectedTab == 0,
@@ -168,18 +168,18 @@ private fun NotificationRow(
     val tone = when (importance) {
         NotificationImportance.HIGH.name -> StatusAmber
         NotificationImportance.QUIET.name -> TextMuted
-        else -> BrandTealPrimary
+        else -> BrandGoldPrimary
     }
     val toneBg = when (importance) {
         NotificationImportance.HIGH.name -> StatusAmberBg
         NotificationImportance.QUIET.name -> LightSurfaceVariant
-        else -> BrandMintSurface
+        else -> BrandGoldSurface
     }
 
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isRead) LightSurface else BrandMintSurface
+            containerColor = if (isRead) LightSurface else BrandGoldSurface
         ),
         border = CardDefaults.outlinedCardBorder(),
         modifier = Modifier.fillMaxWidth()
@@ -243,7 +243,7 @@ private fun NotificationPreferences(
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (settings.enabled) BrandMintSurface else LightSurfaceVariant
+                    containerColor = if (settings.enabled) BrandGoldSurface else LightSurfaceVariant
                 ),
                 border = CardDefaults.outlinedCardBorder(),
                 modifier = Modifier.fillMaxWidth()

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +24,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -30,6 +35,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.example.data.model.Permission
 import com.example.data.model.BusinessProfileEntity
 import com.example.ui.theme.*
@@ -40,6 +47,13 @@ import com.example.ui.util.ReceiptItemData
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosViewModel
 
+/** A ready-to-fill CSV so the owner can prepare a catalogue on a computer. */
+private val PRODUCT_CSV_TEMPLATE = """
+    name,sellingPrice,costPrice,barcode,sku,category,subCategory,unit,currentStock,lowStockThreshold,tracked,favourite,variants
+    Coconut Oil 1L,1900,1600,4791000000001,COCO-1L,Grocery,Oil,Litre,12,4,true,false,
+    Biriyani Regular,1200,800,,BIR-REG,Food,Rice dishes,Plate,0,0,false,false,"Regular|1200;Full|1800"
+""".trimIndent()
+
 enum class SettingsSection(val title: String, val icon: @Composable () -> Unit) {
     ALL("All", { Icon(Icons.Default.Tune, null, Modifier.size(16.dp)) }),
     BUSINESS("Business", { Icon(Icons.Default.Store, null, Modifier.size(16.dp)) }),
@@ -48,7 +62,7 @@ enum class SettingsSection(val title: String, val icon: @Composable () -> Unit) 
     DATA("Data & System", { Icon(Icons.Default.Storage, null, Modifier.size(16.dp)) })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsConfigurationScreen(
     viewModel: PosViewModel,
@@ -119,6 +133,52 @@ fun SettingsConfigurationScreen(
     var showTestPrintDialog by remember { mutableStateOf(false) }
     var showResetConfirmDialog by remember { mutableStateOf(false) }
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
+    var showFlushConfirmDialog by remember { mutableStateOf(false) }
+    var showProviderCloudDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val csv = viewModel.exportProductsCsv()
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(csv.toByteArray(Charsets.UTF_8))
+                    }
+                }.onFailure { viewModel.showMessage("Could not write the CSV file") }
+            }
+        }
+    }
+    val templateLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(PRODUCT_CSV_TEMPLATE.toByteArray(Charsets.UTF_8))
+                }
+            }.onFailure { viewModel.showMessage("Could not write the CSV template") }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val content = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                }.getOrDefault("")
+                if (content.isBlank()) {
+                    viewModel.showMessage("That file was empty")
+                } else {
+                    viewModel.importProductsFromCsv(content)
+                }
+            }
+        }
+    }
 
     Scaffold(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets
@@ -169,7 +229,7 @@ fun SettingsConfigurationScreen(
                             )
                             onBack()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.padding(end = 8.dp).testTag("save_settings_top")
@@ -210,7 +270,7 @@ fun SettingsConfigurationScreen(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = LightSurface,
                         unfocusedContainerColor = LightSurface,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder
                     ),
                     modifier = Modifier.fillMaxWidth().testTag("settings_search_field"),
@@ -236,8 +296,8 @@ fun SettingsConfigurationScreen(
                                 }
                             },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandTealPrimary,
-                                selectedLabelColor = Color.White
+                                selectedContainerColor = BrandGoldPrimary,
+                                selectedLabelColor = BrandOnGold
                             ),
                             shape = RoundedCornerShape(8.dp)
                         )
@@ -256,7 +316,7 @@ fun SettingsConfigurationScreen(
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Business Name *") },
-                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandTealPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandGoldPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -281,7 +341,7 @@ fun SettingsConfigurationScreen(
                             value = phone,
                             onValueChange = { phone = it },
                             label = { Text("Phone Number (Sri Lanka default)") },
-                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandTealPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandGoldPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -292,7 +352,7 @@ fun SettingsConfigurationScreen(
                             value = address,
                             onValueChange = { address = it },
                             label = { Text("Shop Address") },
-                            leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = BrandTealPrimary) },
+                            leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = BrandGoldPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -359,7 +419,7 @@ fun SettingsConfigurationScreen(
                             supportingText = {
                                 Text("Leave blank to use your shop name.", fontSize = 10.sp)
                             },
-                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandTealPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandGoldPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -429,7 +489,7 @@ fun SettingsConfigurationScreen(
                             value = receiptFooter,
                             onValueChange = { receiptFooter = it },
                             label = { Text("Thank you message") },
-                            leadingIcon = { Icon(Icons.Default.FavoriteBorder, null, tint = BrandTealPrimary) },
+                            leadingIcon = { Icon(Icons.Default.FavoriteBorder, null, tint = BrandGoldPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -509,7 +569,7 @@ fun SettingsConfigurationScreen(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandMintSurface),
+                            colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -519,7 +579,7 @@ fun SettingsConfigurationScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Icon(Icons.Default.Print, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(24.dp))
+                                    Icon(Icons.Default.Print, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(printerName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
@@ -528,7 +588,7 @@ fun SettingsConfigurationScreen(
                                 }
                                 Button(
                                     onClick = { showTestPrintDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     modifier = Modifier.testTag("test_print_btn")
@@ -693,7 +753,7 @@ fun SettingsConfigurationScreen(
             }
 
             // SECTION 4: DATA, OFFLINE & MAINTENANCE
-            if (shouldShowSection(SettingsSection.DATA, selectedSection, searchQuery, "Data backup export offline reset demo wizard")) {
+            if (shouldShowSection(SettingsSection.DATA, selectedSection, searchQuery, "Data backup export offline reset demo wizard csv import flush erase clear")) {
                 item {
                     SettingsCard(
                         title = "4. DATA & SYSTEM DURABILITY",
@@ -702,7 +762,14 @@ fun SettingsConfigurationScreen(
                         Card(
                             colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    // Provider only: long-press the offline status
+                                    // block to open the hidden provider controls.
+                                    onClick = {},
+                                    onLongClick = { showProviderCloudDialog = true }
+                                )
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -723,7 +790,11 @@ fun SettingsConfigurationScreen(
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
-                                onClick = { showBackupSuccessDialog = true },
+                                onClick = {
+                                    viewModel.backupNow {
+                                        showBackupSuccessDialog = true
+                                    }
+                                },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).testTag("backup_data_btn")
                             ) {
@@ -747,15 +818,71 @@ fun SettingsConfigurationScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = {
+                                    templateLauncher.launch("arro-pos-products-template.csv")
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("download_products_template")
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Template", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    exportLauncher.launch("arro-pos-products.csv")
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("export_products_csv")
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Products CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch("text/csv") },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("import_products_csv")
+                            ) {
+                                Icon(Icons.Default.Upload, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Import CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "CSV columns: name, sellingPrice, costPrice, barcode, sku, category, subCategory, unit, currentStock, lowStockThreshold, tracked, favourite, variants. Tap Template for a ready-to-fill file, export your current list, or import one from your computer.",
+                            fontSize = 10.sp,
+                            color = TextSecondary
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = { showFlushConfirmDialog = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("flush_data_btn")
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Data flush — remove all current data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         OutlinedButton(
                             onClick = { showResetConfirmDialog = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusAmber),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth().testTag("reset_demo_btn")
                         ) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = null, Modifier.size(16.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reset Store to Default Demo Data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Run the Setup Wizard again", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -796,7 +923,7 @@ fun SettingsConfigurationScreen(
                         )
                         onBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -875,7 +1002,7 @@ fun SettingsConfigurationScreen(
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("TOTAL PAID (CASH)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ReceiptText)
-                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(receiptFooter, fontSize = 9.sp, color = ReceiptText)
@@ -889,7 +1016,7 @@ fun SettingsConfigurationScreen(
                     Spacer(modifier = Modifier.height(18.dp))
                     Button(
                         onClick = { showTestPrintDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -908,13 +1035,13 @@ fun SettingsConfigurationScreen(
             title = { Text("Backup Created", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Store database export complete.\n\nFile: ${name.lowercase().replace(" ", "_")}_backup_${System.currentTimeMillis()}.json\n\nContains all sales, customers, stock levels, suppliers, and cashier logs safely."
+                    "A full shop backup has been saved safely on this phone.\n\nIt contains all sales, customers, stock, suppliers, credit entries and audit history.\n\nOpen More > Backup & Cloud (when activated) to upload the same backup to Google Drive."
                 )
             },
             confirmButton = {
                 Button(
                     onClick = { showBackupSuccessDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
                 ) {
                     Text("OK")
                 }
@@ -922,15 +1049,15 @@ fun SettingsConfigurationScreen(
         )
     }
 
-    // --- Reset Confirm Dialog ---
+    // --- Setup Wizard Confirm Dialog ---
     if (showResetConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showResetConfirmDialog = false },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = StatusRed) },
-            title = { Text("Reset Store Data?", fontWeight = FontWeight.Bold) },
+            icon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = StatusAmber) },
+            title = { Text("Run the setup wizard again?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "This will restore sample products (Coca-Cola, Bread, Milk, Water, etc.), clear current test bills, and reset Sri Lankan credit book accounts to their starting state."
+                    "This opens the setup screens. Nothing is deleted just by running it — use “Data flush” below if you also want to remove all current data."
                 )
             },
             confirmButton = {
@@ -939,9 +1066,9 @@ fun SettingsConfigurationScreen(
                         showResetConfirmDialog = false
                         viewModel.setOnboardingStep(1)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
                 ) {
-                    Text("Reset & Setup Again", fontWeight = FontWeight.Bold)
+                    Text("Open wizard", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -949,6 +1076,44 @@ fun SettingsConfigurationScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // --- Data flush Confirm Dialog ---
+    if (showFlushConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showFlushConfirmDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = StatusRed) },
+            title = { Text("Erase all app data?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This permanently removes every product, sale, customer, supplier, credit entry, stock movement, expense, team member and audit log from this phone. The app is then prepared for setup again.\n\nThere is no undo."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFlushConfirmDialog = false
+                        viewModel.clearAllBusinessData()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed, contentColor = Color.White)
+                ) {
+                    Text("Yes, erase everything", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFlushConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // --- Provider-only cloud controls (hidden in normal navigation) ---
+    if (showProviderCloudDialog) {
+        ProviderCloudScreen(
+            viewModel = viewModel,
+            onDismiss = { showProviderCloudDialog = false }
         )
     }
 }
@@ -966,7 +1131,7 @@ private fun SettingsCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandTealPrimary)
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandGoldPrimary)
             Text(subtitle, fontSize = 11.sp, color = TextSecondary)
             Spacer(modifier = Modifier.height(14.dp))
             content()

@@ -194,13 +194,13 @@ private fun WelcomeStep(onStart: () -> Unit) {
                 modifier = Modifier
                     .size(88.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(BrandTealPrimary),
+                    .background(BrandGoldPrimary),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.ReceiptLong,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = BrandOnGold,
                     modifier = Modifier.size(46.dp)
                 )
             }
@@ -208,7 +208,7 @@ private fun WelcomeStep(onStart: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                "KadePOS",
+                "Arro-POS",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = TextPrimary
@@ -217,7 +217,7 @@ private fun WelcomeStep(onStart: () -> Unit) {
                 "Open. Sell. Done.",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = BrandTealPrimary,
+                color = BrandGoldPrimary,
                 modifier = Modifier.padding(top = 4.dp)
             )
 
@@ -240,7 +240,8 @@ private fun WelcomeStep(onStart: () -> Unit) {
             ) {
                 WelcomePoint(Icons.Default.Bolt, "Fast billing", "A normal sale takes a few taps")
                 WelcomePoint(Icons.Default.Print, "Prints receipts", "Bluetooth or Wi-Fi thermal printers")
-                WelcomePoint(Icons.Default.CloudOff, "No internet needed", "Everything is saved on this phone")
+                WelcomePoint(Icons.Default.CloudOff, "Works without internet", "Selling is saved on this phone first")
+                WelcomePoint(Icons.Default.CloudUpload, "Optional cloud backup", "Connect a Google account later for a safe copy")
                 WelcomePoint(Icons.Default.TrendingUp, "Grows with you", "Turn on stock, credit and staff when ready")
             }
 
@@ -272,10 +273,10 @@ private fun WelcomePoint(icon: ImageVector, title: String, detail: String) {
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(BrandMintSurface),
+                .background(BrandGoldSurface),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column {
@@ -400,9 +401,9 @@ private fun ShopTypeStep(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (draft.loadStarterItems) BrandMintSurface else LightSurface
+                    containerColor = if (draft.loadStarterItems) BrandGoldSurface else LightSurface
                 ),
-                border = BorderStroke(1.dp, if (draft.loadStarterItems) BrandTealPrimary else LightBorder),
+                border = BorderStroke(1.dp, if (draft.loadStarterItems) BrandGoldPrimary else LightBorder),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onChange(draft.copy(loadStarterItems = !draft.loadStarterItems)) }
@@ -411,7 +412,7 @@ private fun ShopTypeStep(
                     Checkbox(
                         checked = draft.loadStarterItems,
                         onCheckedChange = { onChange(draft.copy(loadStarterItems = it)) },
-                        colors = CheckboxDefaults.colors(checkedColor = BrandTealPrimary)
+                        colors = CheckboxDefaults.colors(checkedColor = BrandGoldPrimary)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Column {
@@ -681,11 +682,11 @@ private fun PrinterStep(
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (draft.paperWidth == width) BrandMintSurface else LightSurface
+                            containerColor = if (draft.paperWidth == width) BrandGoldSurface else LightSurface
                         ),
                         border = BorderStroke(
                             if (draft.paperWidth == width) 2.dp else 1.dp,
-                            if (draft.paperWidth == width) BrandTealPrimary else LightBorder
+                            if (draft.paperWidth == width) BrandGoldPrimary else LightBorder
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -844,7 +845,7 @@ private fun SummaryLine(
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.width(12.dp))
         Text(label, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
         Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -950,7 +951,7 @@ private fun StepTopBar(step: Int, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp),
-            color = BrandTealPrimary,
+            color = BrandGoldPrimary,
             trackColor = LightBorder,
             gapSize = 0.dp,
             drawStopIndicator = {}
@@ -997,7 +998,7 @@ private fun SetupField(
             shape = RoundedCornerShape(14.dp),
             textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium),
             placeholder = { Text(placeholder, color = TextMuted, fontSize = 15.sp) },
-            leadingIcon = { Icon(icon, contentDescription = null, tint = BrandTealPrimary) },
+            leadingIcon = { Icon(icon, contentDescription = null, tint = BrandGoldPrimary) },
             trailingIcon = {
                 if (error == null && value.isNotBlank()) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
@@ -1014,10 +1015,10 @@ private fun SetupField(
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 2,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = BrandTealPrimary,
+                focusedBorderColor = BrandGoldPrimary,
                 unfocusedBorderColor = LightBorder,
                 errorBorderColor = StatusRed,
-                cursorColor = BrandTealPrimary
+                cursorColor = BrandGoldPrimary
             )
         )
     }

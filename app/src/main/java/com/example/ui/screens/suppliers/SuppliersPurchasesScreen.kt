@@ -96,8 +96,8 @@ fun SuppliersPurchasesScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddSupplier = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
+                containerColor = BrandGoldPrimary,
+                contentColor = BrandOnGold,
                 modifier = Modifier.testTag("add_supplier_fab")
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -123,7 +123,7 @@ fun SuppliersPurchasesScreen(
                         1 -> "1 supplier waiting to be paid"
                         else -> "${owed.size} suppliers waiting to be paid"
                     },
-                    accent = StatusBlue
+                    accent = BrandGoldPrimary
                 )
             }
 
@@ -206,7 +206,7 @@ fun SuppliersPurchasesScreen(
             suggestedAmount = supplier.outstandingBalance,
             suggestedLabel = "All of it",
             maxAmount = supplier.outstandingBalance,
-            accent = StatusBlue,
+            accent = BrandGoldPrimary,
             onConfirm = { amount ->
                 if (oldest != null) {
                     viewModel.settlePurchaseDue(oldest.id, amount, "CASH", "")
@@ -239,12 +239,16 @@ fun SuppliersPurchasesScreen(
             onPay = { payingSupplier = live; openSupplier = null },
             onNewBill = { billFor = live; openSupplier = null },
             onCall = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_DIAL, Uri.parse("tel:${live.phone}"))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }.onFailure { viewModel.showMessage("Could not open the dialler") }
+                if (live.phone.isBlank()) {
+                    viewModel.showMessage("No phone saved for ${live.name}")
+                } else {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_DIAL, Uri.parse("tel:${live.phone}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }.onFailure { viewModel.showMessage("Could not open the dialler") }
+                }
             },
             onDelete = {
                 viewModel.deleteSupplier(live.id)
@@ -361,7 +365,7 @@ private fun SupplierSheet(
                 }
                 if (supplier.phone.isNotBlank()) {
                     IconButton(onClick = onCall) {
-                        Icon(Icons.Default.Phone, contentDescription = "Call", tint = BrandTealPrimary)
+                        Icon(Icons.Default.Phone, contentDescription = "Call", tint = BrandGoldPrimary)
                     }
                 }
             }
@@ -396,7 +400,7 @@ private fun SupplierSheet(
                     Button(
                         onClick = onPay,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusBlue),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary, contentColor = BrandOnGold),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -471,7 +475,7 @@ private fun SupplierSheet(
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = onDelete,
-                                colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                                colors = ButtonDefaults.buttonColors(containerColor = StatusRed, contentColor = Color.White),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) { Text("Yes, remove") }
@@ -536,7 +540,7 @@ private fun SupplierBillSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("bill_total_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -549,7 +553,7 @@ private fun SupplierBillSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -586,7 +590,7 @@ private fun SupplierBillSheet(
                 onClick = { onSave(total, paid) },
                 enabled = total > 0,
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
@@ -631,7 +635,7 @@ private fun AddSupplierSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("supplier_name_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -644,7 +648,7 @@ private fun AddSupplierSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -653,7 +657,7 @@ private fun AddSupplierSheet(
                 onClick = { onSave(name.trim(), phone.trim()) },
                 enabled = name.isNotBlank(),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)

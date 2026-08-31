@@ -1,5 +1,5 @@
 {
-  "name": "KadePOS",
+  "name": "Arro-POS",
   "description": "A pocket POS for every Sri Lankan business. Open, sell, take payment and print \u2014 offline, from your phone. Stock, credit book, customers, suppliers and reports grow with you.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

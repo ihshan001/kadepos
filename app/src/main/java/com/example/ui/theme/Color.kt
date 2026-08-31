@@ -2,30 +2,29 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Premium Fintech Palette (Deep Teal, Emerald, Slate, Clean Neutrals)
-val BrandTealPrimary = Color(0xFF0F766E)
-val BrandTealDark = Color(0xFF115E59)
-val BrandTealLight = Color(0xFF14B8A6)
-val BrandEmeraldAccent = Color(0xFF10B981)
-val BrandMintSurface = Color(0xFFF0FDF4)
+// Arro-POS Gold Palette (#EAC34D core, warm neutrals)
+val BrandGoldPrimary = Color(0xFFEAC34D)
+val BrandGoldDark = Color(0xFF6B4A00)
+val BrandGoldLight = Color(0xFFF6DC8E)
+val BrandGoldAccent = Color(0xFFB8860B)
+val BrandGoldSurface = Color(0xFFFDF3D3)
+val BrandOnGold = Color(0xFF3D2B00)
 
-val SlateDarkBackground = Color(0xFF0F172A)
-val SlateCardDark = Color(0xFF1E293B)
-val SlateCardBorder = Color(0xFF334155)
-
-val LightBackground = Color(0xFFF8FAFC)
+// Warm neutrals (matching the gold brand instead of cool slate/teal)
+val LightBackground = Color(0xFFFBF7EF)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF1F5F9)
-val LightBorder = Color(0xFFE2E8F0)
+val LightSurfaceVariant = Color(0xFFF4EEDD)
+val LightBorder = Color(0xFFE7DDB9)
 
-val TextPrimary = Color(0xFF0F172A)
-val TextSecondary = Color(0xFF64748B)
-val TextMuted = Color(0xFF94A3B8)
+val TextPrimary = Color(0xFF241C00)
+val TextSecondary = Color(0xFF75643E)
+val TextMuted = Color(0xFFA3936B)
 
-// Status Colors
+// Status Colors — kept semantic so warnings still read as warnings.
+// The user's expense request keeps red for destructive actions.
 val StatusGreen = Color(0xFF16A34A)
 val StatusGreenBg = Color(0xFFDCFCE7)
-val StatusAmber = Color(0xFFD97706)
+val StatusAmber = Color(0xFFB45309)
 val StatusAmberBg = Color(0xFFFEF3C7)
 val StatusRed = Color(0xFFDC2626)
 val StatusRedBg = Color(0xFFFEE2E2)

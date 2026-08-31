@@ -5,15 +5,15 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val KadeColorScheme = lightColorScheme(
-    primary = BrandTealPrimary,
-    onPrimary = Color.White,
-    primaryContainer = BrandMintSurface,
-    onPrimaryContainer = BrandTealDark,
-    secondary = BrandEmeraldAccent,
-    onSecondary = Color.White,
-    secondaryContainer = BrandMintSurface,
-    onSecondaryContainer = BrandTealDark,
+private val ArroColorScheme = lightColorScheme(
+    primary = BrandGoldPrimary,
+    onPrimary = BrandOnGold,
+    primaryContainer = BrandGoldSurface,
+    onPrimaryContainer = BrandGoldDark,
+    secondary = BrandGoldAccent,
+    onSecondary = BrandOnGold,
+    secondaryContainer = BrandGoldSurface,
+    onSecondaryContainer = BrandGoldDark,
     error = StatusRed,
     onError = Color.White,
     errorContainer = StatusRedBg,
@@ -29,22 +29,22 @@ private val KadeColorScheme = lightColorScheme(
 )
 
 /**
- * KadePOS theme. Deliberately light-only: shopkeepers use the app in bright
+ * Arro-POS theme. Deliberately light-only: shopkeepers use the app in bright
  * daylight and under shop lighting, and a single scheme keeps every screen
  * predictable.
  */
 @Composable
-fun KadePosTheme(content: @Composable () -> Unit) {
+fun ArroPosTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = KadeColorScheme,
+        colorScheme = ArroColorScheme,
         typography = Typography,
         content = content
     )
 }
 
-@Deprecated("Renamed to KadePosTheme", ReplaceWith("KadePosTheme(content)"))
+@Deprecated("Renamed to ArroPosTheme", ReplaceWith("ArroPosTheme(content)"))
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit
-) = KadePosTheme(content)
+) = ArroPosTheme(content)

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.KadePOS" parent="android:Theme.DeviceDefault.Light.NoActionBar">
-        <item name="android:windowBackground">@color/brand_background</item>
-        <item name="android:statusBarColor">@color/brand_teal</item>
-        <item name="android:navigationBarColor">@color/brand_surface</item>
+    <style name="Theme.ArroPOS" parent="android:Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:statusBarColor">#7A5A00</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#F4F6F8</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:fontFamily">sans</item>
     </style>
-
 </resources>

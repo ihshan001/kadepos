@@ -186,7 +186,7 @@ fun SalesTrendsChart(
                         Icon(
                             Icons.Default.TrendingUp,
                             contentDescription = null,
-                            tint = BrandTealPrimary,
+                            tint = BrandGoldPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -207,7 +207,7 @@ fun SalesTrendsChart(
                 // Period Toggle Chips
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = BrandMintSurface,
+                    color = BrandGoldSurface,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp))
                 ) {
                     Row(modifier = Modifier.padding(2.dp)) {
@@ -251,7 +251,7 @@ fun SalesTrendsChart(
                         CurrencyUtils.formatLkr(totalPeriodSales),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = BrandTealPrimary
+                        color = BrandGoldPrimary
                     )
                 }
 
@@ -291,7 +291,7 @@ fun SalesTrendsChart(
                 selectedPoint?.let { pt ->
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = BrandMintSurface,
+                        color = BrandGoldSurface,
                         border = CardDefaults.outlinedCardBorder(),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     ) {
@@ -308,7 +308,7 @@ fun SalesTrendsChart(
                                 CurrencyUtils.formatLkr(pt.amount),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandTealPrimary
+                                color = BrandGoldPrimary
                             )
                         }
                     }
@@ -355,7 +355,7 @@ fun SalesTrendsChart(
                     for (stepRatio in gridSteps) {
                         val y = chartHeight - (chartHeight * stepRatio)
                         drawLine(
-                            color = Color(0xFFE2E8F0),
+                            color = BrandGoldSurface.copy(alpha=0.9f),
                             start = Offset(0f, y),
                             end = Offset(canvasWidth, y),
                             strokeWidth = 1.dp.toPx(),
@@ -381,19 +381,19 @@ fun SalesTrendsChart(
                         // Determine bar gradient
                         val barBrush = if (isSelected) {
                             Brush.verticalGradient(
-                                colors = listOf(BrandTealDark, BrandTealPrimary),
+                                colors = listOf(BrandGoldDark, BrandGoldPrimary),
                                 startY = y,
                                 endY = chartHeight
                             )
                         } else if (isPeak) {
                             Brush.verticalGradient(
-                                colors = listOf(BrandTealPrimary, BrandMintSurface),
+                                colors = listOf(BrandGoldPrimary, BrandGoldSurface),
                                 startY = y,
                                 endY = chartHeight
                             )
                         } else {
                             Brush.verticalGradient(
-                                colors = listOf(BrandTealPrimary.copy(alpha = 0.75f), BrandMintSurface.copy(alpha = 0.4f)),
+                                colors = listOf(BrandGoldPrimary.copy(alpha = 0.75f), BrandGoldSurface.copy(alpha = 0.4f)),
                                 startY = y,
                                 endY = chartHeight
                             )
@@ -410,7 +410,7 @@ fun SalesTrendsChart(
                         // If selected, draw highlight outline
                         if (isSelected) {
                             drawRoundRect(
-                                color = BrandTealDark,
+                                color = BrandGoldDark,
                                 topLeft = Offset(x - 1.5.dp.toPx(), y - 1.5.dp.toPx()),
                                 size = Size(barWidth + 3.dp.toPx(), barHeight + 3.dp.toPx()),
                                 cornerRadius = CornerRadius(7.dp.toPx(), 7.dp.toPx()),
@@ -420,7 +420,7 @@ fun SalesTrendsChart(
 
                         // Draw X-axis label
                         val textStyle = TextStyle(
-                            color = if (isSelected) BrandTealDark else TextSecondary,
+                            color = if (isSelected) BrandGoldDark else TextSecondary,
                             fontSize = 10.sp,
                             fontWeight = if (isSelected || isPeak) FontWeight.Bold else FontWeight.Normal
                         )
@@ -453,7 +453,7 @@ fun SalesTrendsChart(
                         // Draw trend line
                         drawPath(
                             path = trendPath,
-                            color = BrandTealDark.copy(alpha = 0.85f),
+                            color = BrandGoldDark.copy(alpha = 0.85f),
                             style = Stroke(
                                 width = 2.5.dp.toPx(),
                                 pathEffect = PathEffect.cornerPathEffect(8f)
@@ -464,12 +464,12 @@ fun SalesTrendsChart(
                         pointOffsets.forEachIndexed { idx, pt ->
                             val isSel = selectedPointIndex == idx
                             drawCircle(
-                                color = Color.White,
+                                color = BrandGoldSurface,
                                 radius = if (isSel) 6.dp.toPx() else 4.dp.toPx(),
                                 center = pt
                             )
                             drawCircle(
-                                color = if (isSel) StatusAmber else BrandTealDark,
+                                color = if (isSel) StatusAmber else BrandGoldDark,
                                 radius = if (isSel) 4.dp.toPx() else 2.5.dp.toPx(),
                                 center = pt
                             )
@@ -515,7 +515,7 @@ private fun PeriodToggleButton(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) BrandTealPrimary else Color.Transparent)
+            .background(if (isSelected) BrandGoldPrimary else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
@@ -524,7 +524,7 @@ private fun PeriodToggleButton(
             text = label,
             fontSize = 11.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            color = if (isSelected) Color.White else TextSecondary
+            color = if (isSelected) BrandOnGold else TextSecondary
         )
     }
 }

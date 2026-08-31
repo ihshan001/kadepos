@@ -73,6 +73,9 @@ interface PosDao {
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun getProductById(id: Long): ProductEntity?
 
+    @Query("SELECT * FROM products WHERE parentProductId = :parentId AND isVariant = 1 AND isArchived = 0")
+    suspend fun getVariantChildren(parentId: Long): List<ProductEntity>
+
     @Query(
         "SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 " +
             "AND (shopType = :shopType OR shopType = '') LIMIT 1"
@@ -399,6 +402,83 @@ interface PosDao {
         }
 
         return saleId
+    }
+
+    // ---- Data flush ------------------------------------------------------
+    // "Remove all current data" is a real owner action, so each table is
+    // cleared individually in one transaction. It is deliberately NOT a
+    // destructive migration: that would also wipe the fresh profile and any
+    // future table, while this lets [clearAllBusinessData] reset everything
+    // and leave the app ready to run setup again.
+
+    @Query("DELETE FROM sale_items")
+    suspend fun clearAllSaleItems()
+
+    @Query("DELETE FROM sales")
+    suspend fun clearAllSales()
+
+    @Query("DELETE FROM credit_transactions")
+    suspend fun clearAllCreditTransactions()
+
+    @Query("DELETE FROM customers")
+    suspend fun clearAllCustomers()
+
+    @Query("DELETE FROM purchase_items")
+    suspend fun clearAllPurchaseItems()
+
+    @Query("DELETE FROM purchases")
+    suspend fun clearAllPurchases()
+
+    @Query("DELETE FROM suppliers")
+    suspend fun clearAllSuppliers()
+
+    @Query("DELETE FROM stock_movements")
+    suspend fun clearAllStockMovements()
+
+    @Query("DELETE FROM expenses")
+    suspend fun clearAllExpenses()
+
+    @Query("DELETE FROM staff")
+    suspend fun clearAllStaff()
+
+    @Query("DELETE FROM cash_movements")
+    suspend fun clearAllCashMovements()
+
+    @Query("DELETE FROM cash_register_shifts")
+    suspend fun clearAllShifts()
+
+    @Query("DELETE FROM held_sales")
+    suspend fun clearAllHeldSales()
+
+    @Query("DELETE FROM audit_log")
+    suspend fun clearAllAuditLog()
+
+    @Query("DELETE FROM notifications")
+    suspend fun clearAllNotifications()
+
+    @Query("DELETE FROM notification_settings")
+    suspend fun clearAllNotificationSettings()
+
+    /** Clears every business table in one atomic unit. */
+    @Transaction
+    suspend fun clearAllBusinessData() {
+        clearAllSaleItems()
+        clearAllSales()
+        clearAllCreditTransactions()
+        clearAllCustomers()
+        clearAllPurchaseItems()
+        clearAllPurchases()
+        clearAllSuppliers()
+        clearAllStockMovements()
+        clearAllExpenses()
+        clearAllStaff()
+        clearAllCashMovements()
+        clearAllShifts()
+        clearAllHeldSales()
+        clearAllAuditLog()
+        clearAllNotifications()
+        clearAllNotificationSettings()
+        clearAllProducts()
     }
 
     // ---- Notifications ---------------------------------------------------

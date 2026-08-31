@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_teal">#FF0F766E</color>
-    <color name="brand_teal_dark">#FF115E59</color>
-    <color name="brand_teal_light">#FF14B8A6</color>
-    <color name="brand_background">#FFF8FAFC</color>
+    <color name="brand_gold">#FFEAC34D</color>
+    <color name="brand_gold_dark">#FF6B4A00</color>
+    <color name="brand_gold_light">#FFF6DC8E</color>
+    <color name="brand_background">#FFFBF7EF</color>
     <color name="brand_surface">#FFFFFFFF</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>

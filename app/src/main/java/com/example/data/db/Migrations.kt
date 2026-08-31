@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  */
 
 /**
- * v1 -> v2. The rebrand from "The System" to KadePOS.
+ * v1 -> v2. The rebrand from "The System" to Arro-POS.
  *
  * Adds shop-type isolation, real printer hardware fields, the signed-in staff
  * record, and the audit log table. The v1 database also shipped with demo
@@ -154,6 +154,143 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
 }
 
 /**
+ * v5 -> v6. Flexible product catalogue.
+ *
+ * Products get a proper sub-category path, a small "variants" definitions box,
+ * and enough parent/child hints to turn a variation into its own stock line
+ * without editing the table again. Everything ships with defaults so existing
+ * rows keep working untouched.
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Helper functions are top-level in this file, so calling them before
+        // their declaration is fine in Kotlin. Making ALTERs conditional is
+        // deliberately defensive: a corrupted/partial upgrade can never turn
+        // into a repeat-column crash at app launch.
+        addColumnIfMissing(db, "products", "subCategory", "ALTER TABLE products ADD COLUMN subCategory TEXT NOT NULL DEFAULT ''")
+        addColumnIfMissing(db, "products", "variants", "ALTER TABLE products ADD COLUMN variants TEXT NOT NULL DEFAULT ''")
+        addColumnIfMissing(db, "products", "parentProductId", "ALTER TABLE products ADD COLUMN parentProductId INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "products", "isVariant", "ALTER TABLE products ADD COLUMN isVariant INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** Column names of a table, used to keep a migration idempotent. */
+private fun columnNames(db: SupportSQLiteDatabase, table: String): Set<String> {
+    val columns = mutableSetOf<String>()
+    val cursor = db.query("PRAGMA table_info($table)") ?: return emptySet()
+    cursor.use { c ->
+        val nameIndex = c.getColumnIndex("name")
+        while (c.moveToNext()) {
+            columns.add(c.getString(nameIndex))
+        }
+    }
+    return columns
+}
+
+/** Adds a column when an older install is missing it. Never drops or rewrites. */
+private fun addColumnIfMissing(db: SupportSQLiteDatabase, table: String, column: String, ddl: String) {
+    if (column !in columnNames(db, table)) {
+        db.execSQL(ddl)
+    }
+}
+
+/** True when a table exists in the database. */
+private fun tableExists(db: SupportSQLiteDatabase, table: String): Boolean =
+    columnNames(db, table).isNotEmpty()
+
+/**
+ * v6 -> v7. Keep supplier and purchase rows readable even after an older
+ * install that predates their richer fields. Products already got their
+ * flexible catalogue in 5->6; this closes the same gap on the buy side.
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        if (!tableExists(db, "suppliers")) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS suppliers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    name TEXT NOT NULL,
+                    contactPerson TEXT NOT NULL DEFAULT '',
+                    phone TEXT NOT NULL DEFAULT '',
+                    email TEXT NOT NULL DEFAULT '',
+                    address TEXT NOT NULL DEFAULT '',
+                    outstandingBalance REAL NOT NULL DEFAULT 0.0,
+                    totalPurchased REAL NOT NULL DEFAULT 0.0,
+                    purchaseCount INTEGER NOT NULL DEFAULT 0,
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent()
+            )
+        } else {
+            addColumnIfMissing(db, "suppliers", "name", "ALTER TABLE suppliers ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "suppliers", "contactPerson", "ALTER TABLE suppliers ADD COLUMN contactPerson TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "suppliers", "phone", "ALTER TABLE suppliers ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "suppliers", "email", "ALTER TABLE suppliers ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "suppliers", "address", "ALTER TABLE suppliers ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "suppliers", "outstandingBalance", "ALTER TABLE suppliers ADD COLUMN outstandingBalance REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "suppliers", "totalPurchased", "ALTER TABLE suppliers ADD COLUMN totalPurchased REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "suppliers", "purchaseCount", "ALTER TABLE suppliers ADD COLUMN purchaseCount INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, "suppliers", "notes", "ALTER TABLE suppliers ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+        }
+
+        if (!tableExists(db, "purchases")) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS purchases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    supplierId INTEGER,
+                    supplierName TEXT NOT NULL DEFAULT 'Local Supplier',
+                    invoiceNumber TEXT NOT NULL DEFAULT '',
+                    timestamp INTEGER NOT NULL,
+                    totalAmount REAL NOT NULL,
+                    paidAmount REAL NOT NULL,
+                    dueAmount REAL NOT NULL DEFAULT 0.0,
+                    paymentStatus TEXT NOT NULL DEFAULT 'PAID',
+                    itemsCount INTEGER NOT NULL DEFAULT 0,
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent()
+            )
+        } else {
+            addColumnIfMissing(db, "purchases", "supplierId", "ALTER TABLE purchases ADD COLUMN supplierId INTEGER")
+            addColumnIfMissing(db, "purchases", "supplierName", "ALTER TABLE purchases ADD COLUMN supplierName TEXT NOT NULL DEFAULT 'Local Supplier'")
+            addColumnIfMissing(db, "purchases", "invoiceNumber", "ALTER TABLE purchases ADD COLUMN invoiceNumber TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "purchases", "timestamp", "ALTER TABLE purchases ADD COLUMN timestamp INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, "purchases", "totalAmount", "ALTER TABLE purchases ADD COLUMN totalAmount REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "purchases", "paidAmount", "ALTER TABLE purchases ADD COLUMN paidAmount REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "purchases", "dueAmount", "ALTER TABLE purchases ADD COLUMN dueAmount REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "purchases", "paymentStatus", "ALTER TABLE purchases ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT 'PAID'")
+            addColumnIfMissing(db, "purchases", "itemsCount", "ALTER TABLE purchases ADD COLUMN itemsCount INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, "purchases", "notes", "ALTER TABLE purchases ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+        }
+
+        if (!tableExists(db, "purchase_items")) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS purchase_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    purchaseId INTEGER NOT NULL,
+                    productId INTEGER NOT NULL,
+                    productName TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    costPrice REAL NOT NULL,
+                    lineTotal REAL NOT NULL
+                )
+                """.trimIndent()
+            )
+        } else {
+            addColumnIfMissing(db, "purchase_items", "purchaseId", "ALTER TABLE purchase_items ADD COLUMN purchaseId INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, "purchase_items", "productId", "ALTER TABLE purchase_items ADD COLUMN productId INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, "purchase_items", "productName", "ALTER TABLE purchase_items ADD COLUMN productName TEXT NOT NULL DEFAULT ''")
+            addColumnIfMissing(db, "purchase_items", "quantity", "ALTER TABLE purchase_items ADD COLUMN quantity REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "purchase_items", "costPrice", "ALTER TABLE purchase_items ADD COLUMN costPrice REAL NOT NULL DEFAULT 0.0")
+            addColumnIfMissing(db, "purchase_items", "lineTotal", "ALTER TABLE purchase_items ADD COLUMN lineTotal REAL NOT NULL DEFAULT 0.0")
+        }
+    }
+}
+
+/**
  * The notification types switched on for a shop that has never chosen. Kept as
  * a literal because a migration must describe the schema *as it was at that
  * version* - it can never call into current app code, which will keep changing.
@@ -168,5 +305,7 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
     MIGRATION_3_4,
-    MIGRATION_4_5
+    MIGRATION_4_5,
+    MIGRATION_5_6,
+    MIGRATION_6_7
 )

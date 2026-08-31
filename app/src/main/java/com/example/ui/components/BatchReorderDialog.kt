@@ -338,7 +338,7 @@ fun BatchReorderDialog(
                                 onDismiss()
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
