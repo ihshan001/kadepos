@@ -285,3 +285,20 @@ data class HeldSaleEntity(
     val totalAmount: Double,
     val itemsCount: Int
 )
+
+// ---------------------------------------------------------------------------
+// Projections. Not tables - just the shapes the aggregate queries return when
+// rebuilding the cached balances from their ledgers.
+// ---------------------------------------------------------------------------
+
+/** One product's true stock, summed from `stock_movements`. */
+data class ProductStockTotal(
+    val productId: Long,
+    val total: Double
+)
+
+/** One customer's true credit balance, summed from `credit_transactions`. */
+data class CustomerCreditTotal(
+    val customerId: Long,
+    val total: Double
+)

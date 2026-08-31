@@ -25,13 +25,13 @@ Facts about the current build that constrain every decision below:
 
 | Thing | Current state |
 |---|---|
-| Device storage | Room / SQLite. `kadepos_database`, currently **v5** |
+| Device storage | Room / SQLite. `kadepos_database`, currently **v5**, with real migrations |
 | Network | **None.** The app makes zero network calls today |
 | Printing | Real Bluetooth SPP + Wi-Fi TCP (port 9100) ESC/POS |
 | Identity | Per-staff 4-digit PIN. No accounts, no email, no server |
 | Roles | 19 permissions, 4 roles, per-person overrides as CSV on the staff row |
 | Money | LKR only, `Rs.` prefix |
-| Migrations | `fallbackToDestructiveMigration(dropAllTables = true)` — **must be fixed first** |
+| Migrations | **Real migrations, v1→v5.** No destructive fallback. Schemas exported to `app/schemas` |
 | Entities | 18 (see appendix) |
 | Optional features | Stock counting, credit book, cash drawer count, staff — each independently switchable |
 
@@ -645,7 +645,8 @@ Each phase must ship working.
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| **0** | **Real Room migrations.** Remove `fallbackToDestructiveMigration` | An upgrade preserves data. **Blocks everything** |
+| ~~0~~ | ~~Real Room migrations~~ | **Done.** `data/db/Migrations.kt`, v1→v5, no destructive fallback |
+| ~~0b~~ | ~~Derive stock and credit from their ledgers~~ | **Done.** See Appendix C |
 | 1 | UUIDs, sync columns, outbox; writes populate the outbox | Outbox fills; app behaves identically |
 | 2 | MySQL schema, PHP API skeleton, HTTPS, `/status` | `curl` returns healthy |
 | 3 | Pairing, tokens, revocation | Two devices bound to one shop |
@@ -656,9 +657,8 @@ Each phase must ship working.
 | 8 | FCM + server-side evaluation, channels, digests | Owner notified with the app closed |
 | 9 | Export, delete-my-data, remote revocation | |
 
-**Phase 0 is a hard blocker.** The database currently drops every table on a
-version bump. Shipping sync on top of that would destroy real shops' data on
-the first update.
+**Phases 0 and 0b are complete** — they were the two prerequisites that would
+have made everything after them unsafe. Sync work can now start at Phase 1.
 
 ---
 
@@ -704,8 +704,9 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 > Jetpack Compose and Room, for small Sri Lankan shops.
 >
 > Implement cross-device sync per `docs/CLOUD_SYNC_MASTER_PROMPT.md`, starting
-> at Phase 0 (real Room migrations — the database currently uses
-> `fallbackToDestructiveMigration`, which would destroy live shop data).
+> at Phase 1. Phases 0 and 0b are already done: real Room migrations are in
+> `data/db/Migrations.kt` with schemas exported to `app/schemas`, and stock and
+> credit are already derived from `stock_movements` and `credit_transactions`.
 >
 > Hosting is **self-hosted: our own VPS or shared hosting, our own MySQL 8**.
 > No Firebase, Supabase or any third-party backend-as-a-service for data. FCM
@@ -719,8 +720,9 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 > - Incremental pull uses a server-issued sequence, never a device clock.
 > - Every query is filtered by `shop_id` from the authenticated token, never
 >   from a request parameter.
-> - Never sync a computed balance. Stock and credit derive from their movement
->   tables. Never sync staff PINs.
+> - Never sync a computed balance. Stock and credit already derive from their
+>   movement tables - keep it that way, and make the sync merge rule "append".
+> - Never reintroduce `fallbackToDestructiveMigration`. Never sync staff PINs.
 > - Optional features (stock, credit, cash drawer, staff) may each be off. No
 >   table may be assumed non-empty.
 > - All user-facing wording is plain language: no "sync", "server", "conflict"
@@ -770,14 +772,57 @@ Each is independently switchable and affects what syncs:
 
 **The server must treat every one of these tables as legitimately empty.**
 
-## Appendix C: two changes needed before any sync work
+## Appendix C: the two prerequisites (both now done)
 
-1. **`fallbackToDestructiveMigration` must go.** Every schema change so far has
-   wiped the database. That is acceptable in development and catastrophic once
-   a shop is live.
+These were the blockers. Both are fixed; this records what was done so the
+reasoning is not lost.
 
-2. **`products.currentStock` and `customers.creditBalance` are stored values.**
-   Both must become derived from `stock_movements` and `credit_transactions`.
-   If two tills sell the last unit offline, last-write-wins on a stored balance
-   loses one of the sales. This is the most important schema change in this
-   document and the cheapest to make now.
+### 1. Real migrations — `data/db/Migrations.kt`
+
+`fallbackToDestructiveMigration` is gone. There are now four migrations
+covering v1→v5, registered via `ALL_MIGRATIONS`, and `exportSchema = true`
+writes every version's schema into `app/schemas` (committed) so Room can
+validate migrations at build time.
+
+Deliberately **no destructive fallback remains**. A missing migration now
+crashes loudly in testing instead of silently wiping a shop.
+
+Unit tests pin the chain: every version has a migration, the chain is unbroken
+with no duplicates, and it ends on `CURRENT_DB_VERSION`. `/tmp/audit.py` fails
+if `fallbackToDestructiveMigration` is ever reintroduced.
+
+One subtlety worth remembering: `MIGRATION_4_5` defaults `cashDrawerEnabled` to
+**1**, while the Kotlin entity defaults it to **false**. That difference is
+intentional — shops already using the drawer screens before it became optional
+keep it, while new shops start without it.
+
+### 2. Stock and credit are derived
+
+`stock_movements` and `credit_transactions` are now the truth.
+`products.currentStock` and `customers.creditBalance` are caches over them.
+
+- Every writer **appends a movement, then recomputes** the cached total.
+- The increment-style queries (`adjustProductStock`,
+  `updateCustomerCredit`) have been **deleted**, not just avoided — that
+  operation is precisely what loses a sale when two devices do it at once.
+- Opening stock enters the ledger as an `INITIAL` movement, both when the
+  catalogue is seeded and when a product is added by hand, so the sum is never
+  wrong for a product that has simply never moved.
+- A recount records the *difference* between the ledger and the counted figure,
+  so it states the truth rather than adding to it.
+- `refreshAllStock()` and `refreshAllCredit()` run once at launch, so a cache
+  that drifted — app killed mid-write, or a future sync merging movements from
+  another device — quietly repairs itself.
+
+The sign convention lives in exactly one place, the DAO:
+
+```sql
+-- credit
+SUM(CASE WHEN type = 'PAYMENT' THEN -amount ELSE amount END)
+-- stock
+SUM(changeQty)
+```
+
+**For sync this means the merge rule is simply "append".** Two devices that
+each sell the last unit produce two movements, and the total is right. That is
+the property the whole multi-device design rests on.

@@ -23,6 +23,7 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
@@ -75,6 +76,14 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
+// Room writes the schema of every version into app/schemas. Committing those
+// files is what lets Room verify at build time that each migration actually
+// produces the schema it claims to, rather than failing on a customer's phone.
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))

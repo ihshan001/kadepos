@@ -2,6 +2,9 @@ package com.example
 
 import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.NotificationType
+import com.example.data.db.ALL_MIGRATIONS
+import com.example.data.db.CURRENT_DB_VERSION
+import com.example.data.db.DEFAULT_NOTIFICATION_KEYS
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.Permission
 import com.example.data.model.PermissionSet
@@ -422,5 +425,135 @@ class SetupValidationTest {
     val visible = NotificationType.visibleTo(owner)
     assertTrue(visible.contains(NotificationType.DAY_CLOSED))
     assertTrue(visible.contains(NotificationType.CASH_SHORTAGE))
+  }
+
+  // --- Migrations ----------------------------------------------------------
+
+  @Test
+  fun `every version from 1 to the current one has a migration`() {
+    // A gap here means Room throws IllegalStateException on a real phone, and
+    // without a destructive fallback that is a crash on launch after an update.
+    val covered = ALL_MIGRATIONS.associateBy { it.startVersion to it.endVersion }
+    for (v in 1 until CURRENT_DB_VERSION) {
+      assertTrue(
+        "no migration from schema v$v to v${v + 1}",
+        covered.containsKey(v to (v + 1))
+      )
+    }
+  }
+
+  @Test
+  fun `migrations form an unbroken chain with no duplicates`() {
+    val sorted = ALL_MIGRATIONS.sortedBy { it.startVersion }
+    sorted.forEachIndexed { index, migration ->
+      assertEquals("migration $index starts in the wrong place", index + 1, migration.startVersion)
+      assertEquals("migration $index must move exactly one version",
+        migration.startVersion + 1, migration.endVersion)
+    }
+    assertEquals(
+      "the last migration must land on the current version",
+      CURRENT_DB_VERSION, sorted.last().endVersion
+    )
+    assertEquals("duplicate migration between the same two versions",
+      ALL_MIGRATIONS.size, ALL_MIGRATIONS.map { it.startVersion }.toSet().size)
+  }
+
+  @Test
+  fun `the seeded notification defaults match the enum`() {
+    // The migration cannot call app code - it must describe the schema as it
+    // was - so the default list is a literal. This is what stops it drifting.
+    val fromEnum = NotificationType.entries.filter { it.defaultOn }.joinToString(",") { it.key }
+    assertEquals(
+      "DEFAULT_NOTIFICATION_KEYS in Migrations.kt no longer matches NotificationType",
+      fromEnum, DEFAULT_NOTIFICATION_KEYS
+    )
+  }
+
+  @Test
+  fun `a migrated shop gets the same notification defaults as a fresh install`() {
+    val fresh = NotificationSettingsEntity()
+    val migrated = NotificationSettingsEntity(enabledKeys = DEFAULT_NOTIFICATION_KEYS)
+    NotificationType.entries.forEach {
+      assertEquals("$it differs between a fresh install and an upgrade",
+        fresh.isOn(it), migrated.isOn(it))
+    }
+  }
+
+  // --- Derived balances ----------------------------------------------------
+  //
+  // These pin the arithmetic the DAO relies on. The DAO does the same sums in
+  // SQL; if the convention here ever changes, the SQL must change with it.
+
+  private fun stockFrom(movements: List<Double>): Double =
+    movements.sum().coerceAtLeast(0.0)
+
+  private fun creditFrom(transactions: List<Pair<String, Double>>): Double =
+    transactions.sumOf { (type, amount) ->
+      if (type == "PAYMENT") -amount else amount
+    }.coerceAtLeast(0.0)
+
+  @Test
+  fun `stock is the sum of its movements`() {
+    val movements = listOf(24.0, -3.0, 1.0, 12.0)   // open, sell, return, receive
+    assertEquals(34.0, stockFrom(movements), 0.001)
+  }
+
+  @Test
+  fun `two devices selling the same item offline both count`() {
+    // This is the whole reason stock is derived. With a stored total, the
+    // second write would overwrite the first and one sale would vanish.
+    val opening = 24.0
+    val counterSells = -3.0
+    val stockroomSells = -2.0
+    assertEquals(
+      "both sales must reduce the stock",
+      19.0,
+      stockFrom(listOf(opening, counterSells, stockroomSells)),
+      0.001
+    )
+  }
+
+  @Test
+  fun `a recount states the truth rather than adding to it`() {
+    val before = listOf(24.0, -3.0, -2.0)           // ledger says 19
+    val countedOnTheShelf = 30.0
+    val correction = countedOnTheShelf - before.sum()
+    assertEquals(30.0, stockFrom(before + correction), 0.001)
+  }
+
+  @Test
+  fun `stock never reads as negative`() {
+    assertEquals(0.0, stockFrom(listOf(5.0, -8.0)), 0.001)
+  }
+
+  @Test
+  fun `credit adds what was taken and subtracts what was paid`() {
+    val ledger = listOf(
+      "SALE_CREDIT" to 1500.0,
+      "SALE_CREDIT" to 500.0,
+      "PAYMENT" to 800.0
+    )
+    assertEquals(1200.0, creditFrom(ledger), 0.001)
+  }
+
+  @Test
+  fun `a write-off is a negative adjustment`() {
+    val ledger = listOf("SALE_CREDIT" to 1000.0, "ADJUSTMENT" to -200.0)
+    assertEquals(800.0, creditFrom(ledger), 0.001)
+  }
+
+  @Test
+  fun `overpaying does not leave the shop owing the customer`() {
+    val ledger = listOf("SALE_CREDIT" to 500.0, "PAYMENT" to 5000.0)
+    assertEquals(0.0, creditFrom(ledger), 0.001)
+  }
+
+  @Test
+  fun `a credit sale on one device and a repayment on another both land`() {
+    val ledger = listOf(
+      "SALE_CREDIT" to 1500.0,   // counter phone, offline
+      "PAYMENT" to 500.0         // owner phone, elsewhere
+    )
+    assertEquals(1000.0, creditFrom(ledger), 0.001)
   }
 }

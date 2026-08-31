@@ -109,6 +109,13 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             if (repository.getProfileSync() == null) {
                 repository.saveProfile(BusinessProfileEntity())
             }
+
+            // Stock and credit totals are caches over their ledgers. Rebuild
+            // them once at launch so a figure can never stay wrong: if the app
+            // was killed mid-write, or a future sync merges movements from
+            // another device, this is what quietly puts it right.
+            repository.refreshAllStock()
+            repository.refreshAllCredit()
         }
 
         // Silently reconnect to the saved printer on launch.
@@ -915,13 +922,23 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                             sku = sku,
                             category = category,
                             unit = unit,
-                            currentStock = if (openingStock >= 0) openingStock else existing.currentStock,
                             lowStockThreshold = lowStock,
                             isTracked = isTracked,
                             isFavourite = isFavourite,
                             updatedAt = System.currentTimeMillis()
                         )
                     )
+                    // Changing the stock figure here is a recount, so it goes
+                    // through the ledger like any other correction rather than
+                    // overwriting the total behind its back.
+                    if (openingStock >= 0 && openingStock != existing.currentStock) {
+                        repository.recordStockAdjustment(
+                            productId = id,
+                            newCount = openingStock,
+                            reason = "COUNT",
+                            note = "Corrected while editing the item"
+                        )
+                    }
                     showMessage("Updated $name")
                 }
             } else {
@@ -941,7 +958,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     isTracked = isTracked,
                     isFavourite = isFavourite
                 )
-                repository.insertProduct(newProd)
+                repository.insertProductWithOpeningStock(newProd)
                 audit("PRODUCT_ADDED", "Added product $name", sellingPrice)
                 showMessage("Added $name")
             }

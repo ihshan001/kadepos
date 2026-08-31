@@ -58,6 +58,26 @@ class PosRepository(private val dao: PosDao) {
     suspend fun getProfileSync() = dao.getProfileSync()
 
     suspend fun insertProduct(product: ProductEntity) = dao.insertProduct(product)
+
+    /**
+     * Adds a product and records its opening stock as the first movement, so
+     * the ledger and the cached figure agree from the moment it exists.
+     */
+    suspend fun insertProductWithOpeningStock(product: ProductEntity) {
+        val id = dao.insertProduct(product)
+        if (product.isTracked && product.currentStock > 0.0 && id > 0) {
+            dao.insertStockMovement(
+                StockMovementEntity(
+                    productId = id,
+                    productName = product.name,
+                    changeQty = product.currentStock,
+                    stockAfter = product.currentStock,
+                    type = "INITIAL",
+                    reason = "Opening stock when the item was added"
+                )
+            )
+        }
+    }
     suspend fun updateProduct(product: ProductEntity) = dao.updateProduct(product)
     suspend fun archiveProduct(id: Long) = dao.archiveProduct(id)
     suspend fun deleteProduct(id: Long) = dao.deleteProduct(id)
@@ -72,6 +92,22 @@ class PosRepository(private val dao: PosDao) {
         dao.deleteProductsOutsideShopType(shopType)
         if (dao.countProductsForShopType(shopType) == 0) {
             dao.insertProducts(products)
+            // Opening stock has to enter the ledger too, otherwise the sum of
+            // movements would say zero while the shelf clearly is not empty.
+            for (seeded in dao.getAllProductsSync()) {
+                if (seeded.isTracked && seeded.currentStock > 0.0) {
+                    dao.insertStockMovement(
+                        StockMovementEntity(
+                            productId = seeded.id,
+                            productName = seeded.name,
+                            changeQty = seeded.currentStock,
+                            stockAfter = seeded.currentStock,
+                            type = "INITIAL",
+                            reason = "Opening stock when the shop was set up"
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -100,9 +136,9 @@ class PosRepository(private val dao: PosDao) {
         reason: String,
         note: String
     ) {
-        val customer = dao.getCustomerById(customerId) ?: return
-        val newBalance = customer.creditBalance + amount
-        dao.updateCustomer(customer.copy(creditBalance = newBalance))
+        dao.getCustomerById(customerId) ?: return
+        // Append to the ledger first, then let the balance follow from it.
+        val newBalance = dao.sumCreditTransactions(customerId) + amount
         dao.insertCreditTransaction(
             CreditTransactionEntity(
                 customerId = customerId,
@@ -113,6 +149,32 @@ class PosRepository(private val dao: PosDao) {
                 note = if (reason.isNotBlank()) "$reason - $note" else note
             )
         )
+        refreshCustomerCredit(customerId)
+    }
+
+    /**
+     * Recomputes `customers.creditBalance` from the credit ledger.
+     *
+     * Same reasoning as stock: the stored balance is a cache for listing and
+     * sorting, `credit_transactions` is the truth. Recomputing means a credit
+     * sale recorded on the counter phone and a repayment taken on the owner's
+     * phone both land, instead of the second overwriting the first.
+     */
+    suspend fun refreshCustomerCredit(customerId: Long) {
+        val customer = dao.getCustomerById(customerId) ?: return
+        if (dao.countCreditTransactions(customerId) == 0) return
+        val total = dao.sumCreditTransactions(customerId).coerceAtLeast(0.0)
+        if (kotlin.math.abs(total - customer.creditBalance) > 0.0001) {
+            dao.setCustomerCredit(customerId, total)
+        }
+    }
+
+    /** Rebuilds every cached credit balance from the ledger. */
+    suspend fun refreshAllCredit() {
+        val totals = dao.sumAllCreditTransactions()
+        for (row in totals) {
+            dao.setCustomerCredit(row.customerId, row.total.coerceAtLeast(0.0))
+        }
     }
 
     suspend fun recordCustomerCreditPayment(
@@ -122,8 +184,7 @@ class PosRepository(private val dao: PosDao) {
         note: String
     ) {
         val customer = dao.getCustomerById(customerId) ?: return
-        val newBalance = (customer.creditBalance - amount).coerceAtLeast(0.0)
-        dao.updateCustomer(customer.copy(creditBalance = newBalance))
+        val newBalance = (dao.sumCreditTransactions(customerId) - amount).coerceAtLeast(0.0)
         dao.insertCreditTransaction(
             CreditTransactionEntity(
                 customerId = customerId,
@@ -134,6 +195,7 @@ class PosRepository(private val dao: PosDao) {
                 note = note
             )
         )
+        refreshCustomerCredit(customerId)
 
         // If cash, update active shift drawer
         if (paymentMethod == "CASH") {
@@ -228,7 +290,7 @@ class PosRepository(private val dao: PosDao) {
             val prod = dao.getProductById(item.productId)
             if (prod != null) {
                 val updatedStock = prod.currentStock + item.quantity
-                dao.updateProduct(prod.copy(currentStock = updatedStock, costPrice = item.costPrice))
+                dao.updateProduct(prod.copy(costPrice = item.costPrice))
                 dao.insertStockMovement(
                     StockMovementEntity(
                         productId = prod.id,
@@ -242,7 +304,8 @@ class PosRepository(private val dao: PosDao) {
                 )
             }
         }
-
+        // Stock comes from the ledger, so recompute each product we just moved.
+        for (item in mappedItems) refreshProductStock(item.productId)
         // If unpaid, update supplier balance
         if (purchase.dueAmount > 0 && purchase.supplierId != null) {
             dao.updateSupplierBalance(purchase.supplierId, purchase.dueAmount)
@@ -256,8 +319,10 @@ class PosRepository(private val dao: PosDao) {
         note: String
     ) {
         val prod = dao.getProductById(productId) ?: return
-        val delta = newCount - prod.currentStock
-        dao.updateProduct(prod.copy(currentStock = newCount))
+        // A recount states the truth, so the movement is the difference between
+        // what the ledger currently says and what the shopkeeper actually counted.
+        val ledger = dao.sumStockMovements(productId)
+        val delta = newCount - ledger
         dao.insertStockMovement(
             StockMovementEntity(
                 productId = prod.id,
@@ -268,6 +333,37 @@ class PosRepository(private val dao: PosDao) {
                 reason = "$reason: $note"
             )
         )
+        refreshProductStock(productId)
+    }
+
+    /**
+     * Recomputes `products.currentStock` from the movement ledger.
+     *
+     * The stored figure is only a cache so screens can sort and filter cheaply;
+     * `stock_movements` is the truth. Every write appends a movement and then
+     * calls this, which is what makes two devices selling the last unit add up
+     * correctly instead of one overwriting the other.
+     */
+    suspend fun refreshProductStock(productId: Long) {
+        val prod = dao.getProductById(productId) ?: return
+        // A product with no movements at all has never been counted; leave the
+        // opening figure from the catalogue alone rather than zeroing it.
+        if (dao.countStockMovements(productId) == 0) return
+        val total = dao.sumStockMovements(productId).coerceAtLeast(0.0)
+        if (kotlin.math.abs(total - prod.currentStock) > 0.0001) {
+            dao.setProductStock(productId, total)
+        }
+    }
+
+    /**
+     * Rebuilds every cached stock figure. Cheap enough to run at startup and
+     * the repair path if a cache is ever found to have drifted.
+     */
+    suspend fun refreshAllStock() {
+        val totals = dao.sumAllStockMovements()
+        for (row in totals) {
+            dao.setProductStock(row.productId, row.total.coerceAtLeast(0.0))
+        }
     }
 
     suspend fun receiveStockDirect(
@@ -278,7 +374,9 @@ class PosRepository(private val dao: PosDao) {
     ) {
         val prod = dao.getProductById(productId) ?: return
         val newStock = prod.currentStock + qty
-        dao.updateProduct(prod.copy(currentStock = newStock, costPrice = if (unitCost > 0) unitCost else prod.costPrice))
+        if (unitCost > 0) {
+            dao.updateProduct(prod.copy(costPrice = unitCost))
+        }
         dao.insertStockMovement(
             StockMovementEntity(
                 productId = prod.id,
@@ -289,6 +387,7 @@ class PosRepository(private val dao: PosDao) {
                 reason = "Stock received from $supplierName"
             )
         )
+        refreshProductStock(productId)
     }
 
     suspend fun insertExpense(expense: ExpenseEntity) {
@@ -389,8 +488,7 @@ class PosRepository(private val dao: PosDao) {
             if (item.productId != null && item.productId > 0) {
                 val prod = dao.getProductById(item.productId)
                 if (prod != null && prod.isTracked) {
-                    val newStock = prod.currentStock + item.returnedQuantity
-                    dao.adjustProductStock(prod.id, item.returnedQuantity)
+                    val newStock = dao.sumStockMovements(prod.id) + item.returnedQuantity
                     dao.insertStockMovement(
                         StockMovementEntity(
                             productId = prod.id,
@@ -402,6 +500,7 @@ class PosRepository(private val dao: PosDao) {
                             reason = "Refund: $reason"
                         )
                     )
+                    refreshProductStock(prod.id)
                 }
             }
         }
