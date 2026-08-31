@@ -58,10 +58,10 @@ fun SignInScreen(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(BrandTealPrimary),
+                    .background(BrandGoldPrimary),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+                Icon(Icons.Default.Lock, contentDescription = null, tint = BrandOnGold, modifier = Modifier.size(30.dp))
             }
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -90,7 +90,7 @@ fun SignInScreen(
                             .size(18.dp)
                             .clip(CircleShape)
                             .background(
-                                if (index < pin.length) BrandTealPrimary else LightBorder
+                                if (index < pin.length) BrandGoldPrimary else LightBorder
                             )
                     )
                 }

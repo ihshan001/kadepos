@@ -5,15 +5,15 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val KadeColorScheme = lightColorScheme(
-    primary = BrandTealPrimary,
-    onPrimary = Color.White,
-    primaryContainer = BrandMintSurface,
-    onPrimaryContainer = BrandTealDark,
-    secondary = BrandEmeraldAccent,
-    onSecondary = Color.White,
-    secondaryContainer = BrandMintSurface,
-    onSecondaryContainer = BrandTealDark,
+private val ArroColorScheme = lightColorScheme(
+    primary = BrandGoldPrimary,
+    onPrimary = BrandOnGold,
+    primaryContainer = BrandGoldSurface,
+    onPrimaryContainer = BrandGoldDark,
+    secondary = BrandGoldAccent,
+    onSecondary = BrandOnGold,
+    secondaryContainer = BrandGoldSurface,
+    onSecondaryContainer = BrandGoldDark,
     error = StatusRed,
     onError = Color.White,
     errorContainer = StatusRedBg,
@@ -36,7 +36,7 @@ private val KadeColorScheme = lightColorScheme(
 @Composable
 fun KadePosTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = KadeColorScheme,
+        colorScheme = ArroColorScheme,
         typography = Typography,
         content = content
     )

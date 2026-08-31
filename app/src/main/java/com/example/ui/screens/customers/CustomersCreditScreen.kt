@@ -99,8 +99,8 @@ fun CustomersCreditScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddCustomer = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
+                containerColor = BrandGoldPrimary,
+                contentColor = BrandOnGold,
                 modifier = Modifier.testTag("add_customer_fab")
             ) {
                 Icon(Icons.Default.PersonAdd, contentDescription = null)
@@ -143,7 +143,7 @@ fun CustomersCreditScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = LightSurface,
                             unfocusedContainerColor = LightSurface,
-                            focusedBorderColor = BrandTealPrimary
+                            focusedBorderColor = BrandGoldPrimary
                         )
                     )
                 }
@@ -314,14 +314,14 @@ private fun CustomerSheet(
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape)
-                        .background(BrandMintSurface),
+                        .background(BrandGoldSurface),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         customer.name.take(1).uppercase(),
                         fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BrandTealPrimary
+                        color = BrandGoldPrimary
                     )
                 }
                 Spacer(modifier = Modifier.width(14.dp))
@@ -516,7 +516,7 @@ private fun AddCustomerSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("customer_name_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -529,7 +529,7 @@ private fun AddCustomerSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -538,7 +538,7 @@ private fun AddCustomerSheet(
                 onClick = { onSave(name.trim(), phone.trim()) },
                 enabled = name.isNotBlank(),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)

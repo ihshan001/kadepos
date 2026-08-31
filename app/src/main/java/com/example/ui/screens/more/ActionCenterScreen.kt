@@ -235,7 +235,7 @@ fun ActionCenterScreen(
                                 ) {
                                     Text(
                                         "${actionItems.size}",
-                                        color = Color.White,
+                                        color = BrandOnGold,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
@@ -263,7 +263,7 @@ fun ActionCenterScreen(
                                 resolvedActionIds = resolvedActionIds + actionItems.map { it.id }
                             }
                         ) {
-                            Text("Clear All", color = BrandTealPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Clear All", color = BrandGoldPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 },
@@ -311,7 +311,7 @@ fun ActionCenterScreen(
                         FilterChip(
                             selected = selectedPriorityFilter == AlertPriority.REMINDER,
                             onClick = { selectedPriorityFilter = AlertPriority.REMINDER },
-                            label = { Text("Reminders ($remCount)", fontSize = 12.sp, color = BrandTealPrimary) }
+                            label = { Text("Reminders ($remCount)", fontSize = 12.sp, color = BrandGoldPrimary) }
                         )
                     }
                 }
@@ -335,13 +335,13 @@ fun ActionCenterScreen(
                                 modifier = Modifier
                                     .size(64.dp)
                                     .clip(CircleShape)
-                                    .background(BrandMintSurface),
+                                    .background(BrandGoldSurface),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    tint = BrandTealPrimary,
+                                    tint = BrandGoldPrimary,
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
@@ -441,7 +441,7 @@ fun ActionCenterScreen(
                             Icon(Icons.Default.Close, contentDescription = "Close")
                         }
                     }
-                    Text(prod.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = BrandTealPrimary)
+                    Text(prod.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = BrandGoldPrimary)
                     Text("Current stock: ${prod.currentStock.toInt()} • Cost: ${CurrencyUtils.formatLkr(prod.costPrice)}", fontSize = 12.sp, color = TextSecondary)
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -483,7 +483,7 @@ fun ActionCenterScreen(
                                 restockProduct = null
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) {
@@ -504,19 +504,19 @@ fun ActionItemCard(
     val borderColor = when (item.priority) {
         AlertPriority.CRITICAL -> StatusRed.copy(alpha = 0.3f)
         AlertPriority.ATTENTION -> StatusAmber.copy(alpha = 0.3f)
-        AlertPriority.REMINDER -> BrandTealPrimary.copy(alpha = 0.3f)
+        AlertPriority.REMINDER -> BrandGoldPrimary.copy(alpha = 0.3f)
     }
 
     val iconTint = when (item.priority) {
         AlertPriority.CRITICAL -> StatusRed
         AlertPriority.ATTENTION -> StatusAmber
-        AlertPriority.REMINDER -> BrandTealPrimary
+        AlertPriority.REMINDER -> BrandGoldPrimary
     }
 
     val badgeColor = when (item.priority) {
         AlertPriority.CRITICAL -> StatusRed
         AlertPriority.ATTENTION -> StatusAmber
-        AlertPriority.REMINDER -> BrandTealPrimary
+        AlertPriority.REMINDER -> BrandGoldPrimary
     }
 
     Card(
@@ -575,8 +575,8 @@ fun ActionItemCard(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = when (item.priority) {
                         AlertPriority.CRITICAL -> StatusRed
-                        AlertPriority.ATTENTION -> BrandTealPrimary
-                        AlertPriority.REMINDER -> BrandTealPrimary
+                        AlertPriority.ATTENTION -> BrandGoldPrimary
+                        AlertPriority.REMINDER -> BrandGoldPrimary
                     }
                 ),
                 shape = RoundedCornerShape(10.dp),

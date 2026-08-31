@@ -96,8 +96,8 @@ fun SuppliersPurchasesScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddSupplier = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
+                containerColor = BrandGoldPrimary,
+                contentColor = BrandOnGold,
                 modifier = Modifier.testTag("add_supplier_fab")
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -365,7 +365,7 @@ private fun SupplierSheet(
                 }
                 if (supplier.phone.isNotBlank()) {
                     IconButton(onClick = onCall) {
-                        Icon(Icons.Default.Phone, contentDescription = "Call", tint = BrandTealPrimary)
+                        Icon(Icons.Default.Phone, contentDescription = "Call", tint = BrandGoldPrimary)
                     }
                 }
             }
@@ -540,7 +540,7 @@ private fun SupplierBillSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("bill_total_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -553,7 +553,7 @@ private fun SupplierBillSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -590,7 +590,7 @@ private fun SupplierBillSheet(
                 onClick = { onSave(total, paid) },
                 enabled = total > 0,
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
@@ -635,7 +635,7 @@ private fun AddSupplierSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("supplier_name_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -648,7 +648,7 @@ private fun AddSupplierSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -657,7 +657,7 @@ private fun AddSupplierSheet(
                 onClick = { onSave(name.trim(), phone.trim()) },
                 enabled = name.isNotBlank(),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)

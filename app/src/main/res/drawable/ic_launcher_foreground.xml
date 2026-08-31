@@ -19,13 +19,13 @@
         android:pathData="M80,85 L56,22 L48,22 L70,85 Z"
         android:fillColor="#FFFFFF" />
 
-    <!-- Teal crossbar (checkout line) -->
+    <!-- Gold crossbar (checkout line) -->
     <path
         android:pathData="M36,60 L72,60 L72,69 L36,69 Z"
-        android:fillColor="#14B8A6" />
+        android:fillColor="#EAC34D" />
 
-    <!-- Teal highlight on the left leg -->
+    <!-- Dark-gold highlight on the left leg -->
     <path
         android:pathData="M35,48 L40,48 L32,68 L28,68 Z"
-        android:fillColor="#14B8A6" />
+        android:fillColor="#B8860B" />
 </vector>

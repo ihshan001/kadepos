@@ -120,7 +120,7 @@ fun ProductsScreen(
                 },
                 actions = {
                     IconButton(onClick = { showAddDialog = true }, modifier = Modifier.testTag("add_product_top_btn")) {
-                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandTealPrimary, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandGoldPrimary, modifier = Modifier.size(28.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
@@ -129,8 +129,8 @@ fun ProductsScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
+                containerColor = BrandGoldPrimary,
+                contentColor = BrandOnGold,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New Product", fontWeight = FontWeight.Bold) },
                 modifier = Modifier.testTag("add_product_fab")
@@ -162,7 +162,7 @@ fun ProductsScreen(
                             CurrencyUtils.formatLkr(totalCatalogValuation),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = BrandTealPrimary
+                            color = BrandGoldPrimary
                         )
                     }
 
@@ -186,13 +186,13 @@ fun ProductsScreen(
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = BrandMintSurface
+                            color = BrandGoldSurface
                         ) {
                             Text(
                                 "${products.count { it.isFavourite }} Pinned",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandTealDark,
+                                color = BrandGoldDark,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -207,7 +207,7 @@ fun ProductsScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search product name, category, barcode, SKU...", fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(20.dp)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotBlank()) {
                         IconButton(onClick = { searchQuery = "" }) {
@@ -220,7 +220,7 @@ fun ProductsScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextPrimary,
                     unfocusedTextColor = TextPrimary,
-                    focusedBorderColor = BrandTealPrimary,
+                    focusedBorderColor = BrandGoldPrimary,
                     unfocusedBorderColor = LightBorder,
                     focusedContainerColor = LightSurface,
                     unfocusedContainerColor = LightSurface
@@ -294,7 +294,7 @@ fun ProductsScreen(
                         Button(
                             onClick = { showAddDialog = true },
                             shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -367,14 +367,14 @@ fun ProductFilterChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
     val contentColor = when {
-        isSelected -> Color.White
+        isSelected -> BrandOnGold
         highlightAmber -> StatusAmber
         else -> TextPrimary
     }
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = when {
-            isSelected -> BrandTealPrimary
+            isSelected -> BrandGoldPrimary
             highlightAmber -> StatusAmberBg
             else -> LightSurface
         },
@@ -477,7 +477,7 @@ fun ProductItemCard(
                         Spacer(modifier = Modifier.height(5.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = BrandMintSurface,
+                            color = BrandGoldSurface,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
@@ -486,7 +486,7 @@ fun ProductItemCard(
                                 VariantCatalog.summary(product.variants),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = BrandTealPrimary,
+                                color = BrandGoldPrimary,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
@@ -499,7 +499,7 @@ fun ProductItemCard(
                         text = CurrencyUtils.formatLkr(product.sellingPrice),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 15.sp,
-                        color = BrandTealPrimary
+                        color = BrandGoldPrimary
                     )
 
                     if (product.costPrice > 0) {
@@ -579,9 +579,9 @@ fun ProductItemCard(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandTealPrimary)
+                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandGoldPrimary)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
                         }
                     }
 
@@ -629,7 +629,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
+                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandGoldPrimary)
                         Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                     IconButton(onClick = onDismiss) {
@@ -642,7 +642,7 @@ fun QuickRestockDialog(
                 // Stock change preview banner
                 Card(
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandMintSurface)
+                    colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -653,7 +653,7 @@ fun QuickRestockDialog(
                             Text("Current Stock", fontSize = 10.sp, color = TextSecondary)
                             Text("${product.currentStock.toInt()} ${product.unit}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(16.dp))
                         Column(horizontalAlignment = Alignment.End) {
                             Text("New Stock Level", fontSize = 10.sp, color = TextSecondary)
                             Text("${projectedStock.toInt()} ${product.unit}", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = StatusGreen)
@@ -689,9 +689,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -709,9 +709,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -730,9 +730,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
+                        focusedBorderColor = BrandGoldPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
+                        cursorColor = BrandGoldPrimary
                     ),
                     singleLine = true
                 )
@@ -746,7 +746,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Total Intake Value:", fontSize = 12.sp, color = TextSecondary)
-                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandTealPrimary)
+                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandGoldPrimary)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -758,7 +758,7 @@ fun QuickRestockDialog(
                         }
                     },
                     enabled = qty > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
@@ -833,7 +833,7 @@ fun ProductEditDialog(
                             text = if (isEdit) "EDIT PRODUCT" else "NEW PRODUCT ENTRY",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.sp,
-                            color = BrandTealPrimary
+                            color = BrandGoldPrimary
                         )
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close")
@@ -854,9 +854,9 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         singleLine = true
                     )
@@ -876,9 +876,9 @@ fun ProductEditDialog(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandTealPrimary,
+                                focusedBorderColor = BrandGoldPrimary,
                                 unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandTealPrimary
+                                cursorColor = BrandGoldPrimary
                             ),
                             singleLine = true
                         )
@@ -894,9 +894,9 @@ fun ProductEditDialog(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandTealPrimary,
+                                focusedBorderColor = BrandGoldPrimary,
                                 unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandTealPrimary
+                                cursorColor = BrandGoldPrimary
                             ),
                             singleLine = true
                         )
@@ -918,9 +918,9 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         singleLine = true
                     )
@@ -933,14 +933,14 @@ fun ProductEditDialog(
                             item {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (unit.equals(u, ignoreCase = true)) BrandTealPrimary else LightSurfaceVariant,
+                                    color = if (unit.equals(u, ignoreCase = true)) BrandGoldPrimary else LightSurfaceVariant,
                                     modifier = Modifier.clickable { unit = u }
                                 ) {
                                     Text(
                                         u,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (unit.equals(u, ignoreCase = true)) Color.White else TextPrimary,
+                                        color = if (unit.equals(u, ignoreCase = true)) BrandOnGold else TextPrimary,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -953,7 +953,7 @@ fun ProductEditDialog(
                 item {
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandMintSurface)
+                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -967,9 +967,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandTealPrimary,
+                                        focusedBorderColor = BrandGoldPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandTealPrimary
+                                        cursorColor = BrandGoldPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -985,9 +985,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandTealPrimary,
+                                        focusedBorderColor = BrandGoldPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandTealPrimary
+                                        cursorColor = BrandGoldPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -1001,7 +1001,7 @@ fun ProductEditDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Profit: ${CurrencyUtils.formatLkr(profit)} / unit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
-                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealDark)
+                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldDark)
                                 }
                             }
                         }
@@ -1017,7 +1017,7 @@ fun ProductEditDialog(
                         placeholder = { Text("Scan or enter barcode") },
                         trailingIcon = {
                             IconButton(onClick = { barcode = "890" + (10000000..99999999).random().toString() }) {
-                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandTealPrimary)
+                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandGoldPrimary)
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -1026,9 +1026,9 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         singleLine = true
                     )
@@ -1062,9 +1062,9 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandTealPrimary,
+                            focusedBorderColor = BrandGoldPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandTealPrimary
+                            cursorColor = BrandGoldPrimary
                         ),
                         minLines = 2,
                         maxLines = 4
@@ -1103,9 +1103,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandTealPrimary,
+                                            focusedBorderColor = BrandGoldPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandTealPrimary
+                                            cursorColor = BrandGoldPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1121,9 +1121,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandTealPrimary,
+                                            focusedBorderColor = BrandGoldPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandTealPrimary
+                                            cursorColor = BrandGoldPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1178,7 +1178,7 @@ fun ProductEditDialog(
                             }
                         },
                         enabled = name.isNotBlank() && sellPriceText.toDoubleOrNull() != null,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {

@@ -45,8 +45,8 @@ import com.example.ui.screens.onboarding.OnboardingFlow
 import com.example.ui.screens.products.ProductsScreen
 import com.example.ui.screens.sales.SalesHistoryScreen
 import com.example.ui.screens.sell.SellScreen
-import com.example.ui.theme.BrandMintSurface
-import com.example.ui.theme.BrandTealPrimary
+import com.example.ui.theme.BrandGoldSurface
+import com.example.ui.theme.BrandGoldPrimary
 import com.example.ui.theme.KadePosTheme
 import com.example.ui.theme.LightBackground
 import com.example.ui.theme.LightSurface
@@ -194,15 +194,15 @@ fun KadePosApp(viewModel: PosViewModel) {
         bottomBar = {
             NavigationBar(
                 containerColor = LightSurface,
-                contentColor = BrandTealPrimary,
+                contentColor = BrandGoldPrimary,
                 tonalElevation = 8.dp
             ) {
                 val colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = BrandTealPrimary,
-                    selectedTextColor = BrandTealPrimary,
+                    selectedIconColor = BrandGoldPrimary,
+                    selectedTextColor = BrandGoldPrimary,
                     unselectedIconColor = TextSecondary,
                     unselectedTextColor = TextSecondary,
-                    indicatorColor = BrandMintSurface
+                    indicatorColor = BrandGoldSurface
                 )
                 navEntries.forEach { entry ->
                     NavigationBarItem(

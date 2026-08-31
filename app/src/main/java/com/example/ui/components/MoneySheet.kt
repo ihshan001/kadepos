@@ -49,7 +49,7 @@ fun MoneySheet(
     suggestedAmount: Double? = null,
     suggestedLabel: String = "Pay all",
     maxAmount: Double? = null,
-    accent: Color = BrandTealPrimary,
+    accent: Color = BrandGoldPrimary,
     footer: (@Composable () -> Unit)? = null
 ) {
     var digits by remember { mutableStateOf("") }
@@ -121,7 +121,7 @@ fun MoneySheet(
                     shortcuts.forEach { (label, value) ->
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = BrandMintSurface,
+                            color = BrandGoldSurface,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { digits = value.roundToLong().toString() }
@@ -320,15 +320,15 @@ fun MoneyHeadline(
                     label,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = BrandOnGold.copy(alpha = 0.85f)
                 )
                 Text(
                     CurrencyUtils.formatLkr(amount),
                     fontSize = 30.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
+                    color = BrandOnGold
                 )
-                Text(caption, fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
+                Text(caption, fontSize = 12.sp, color = BrandOnGold.copy(alpha = 0.85f))
             }
             if (action != null) action()
         }

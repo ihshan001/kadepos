@@ -194,7 +194,7 @@ fun LowStockRestockDialog(
                     item {
                         Card(
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = BrandMintSurface),
+                            colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
                             border = CardDefaults.outlinedCardBorder(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -268,7 +268,7 @@ fun LowStockRestockDialog(
                                             "+${calculatedSuggested.toInt()} ${currentProduct.unit}",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 15.sp,
-                                            color = BrandTealPrimary
+                                            color = BrandGoldPrimary
                                         )
                                     }
                                 }
@@ -299,9 +299,9 @@ fun LowStockRestockDialog(
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary,
-                                    focusedBorderColor = BrandTealPrimary,
+                                    focusedBorderColor = BrandGoldPrimary,
                                     unfocusedBorderColor = LightBorder,
-                                    cursorColor = BrandTealPrimary
+                                    cursorColor = BrandGoldPrimary
                                 ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1.2f),
@@ -317,9 +317,9 @@ fun LowStockRestockDialog(
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary,
-                                    focusedBorderColor = BrandTealPrimary,
+                                    focusedBorderColor = BrandGoldPrimary,
                                     unfocusedBorderColor = LightBorder,
-                                    cursorColor = BrandTealPrimary
+                                    cursorColor = BrandGoldPrimary
                                 ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f),
@@ -520,7 +520,7 @@ fun LowStockRestockDialog(
                                     onDismiss()
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
