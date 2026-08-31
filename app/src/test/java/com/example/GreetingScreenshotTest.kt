@@ -4,7 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.example.data.model.BusinessProfileEntity
 import com.example.ui.screens.onboarding.OnboardingFlow
-import com.example.ui.theme.KadePosTheme
+import com.example.ui.theme.ArroPosTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -24,7 +24,7 @@ class GreetingScreenshotTest {
   @Test
   fun welcome_step_screenshot() {
     composeTestRule.setContent {
-      KadePosTheme {
+      ArroPosTheme {
         OnboardingFlow(
           profile = BusinessProfileEntity(),
           currentStep = 1,

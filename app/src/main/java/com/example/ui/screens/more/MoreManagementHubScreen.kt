@@ -1029,7 +1029,7 @@ fun CashRegisterScreen(
                         showCashMovementDialog = true
                     },
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusGreen),
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusGreen, contentColor = Color.White),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
                     Icon(Icons.Default.ArrowDownward, contentDescription = null)
@@ -1043,7 +1043,7 @@ fun CashRegisterScreen(
                         showCashMovementDialog = true
                     },
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusAmber),
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusAmber, contentColor = Color.White),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
                     Icon(Icons.Default.ArrowUpward, contentDescription = null)

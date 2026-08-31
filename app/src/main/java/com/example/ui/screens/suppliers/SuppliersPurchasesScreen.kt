@@ -123,7 +123,7 @@ fun SuppliersPurchasesScreen(
                         1 -> "1 supplier waiting to be paid"
                         else -> "${owed.size} suppliers waiting to be paid"
                     },
-                    accent = StatusBlue
+                    accent = BrandGoldPrimary
                 )
             }
 
@@ -206,7 +206,7 @@ fun SuppliersPurchasesScreen(
             suggestedAmount = supplier.outstandingBalance,
             suggestedLabel = "All of it",
             maxAmount = supplier.outstandingBalance,
-            accent = StatusBlue,
+            accent = BrandGoldPrimary,
             onConfirm = { amount ->
                 if (oldest != null) {
                     viewModel.settlePurchaseDue(oldest.id, amount, "CASH", "")
@@ -400,7 +400,7 @@ private fun SupplierSheet(
                     Button(
                         onClick = onPay,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusBlue),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary, contentColor = BrandOnGold),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -475,7 +475,7 @@ private fun SupplierSheet(
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = onDelete,
-                                colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                                colors = ButtonDefaults.buttonColors(containerColor = StatusRed, contentColor = Color.White),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) { Text("Yes, remove") }

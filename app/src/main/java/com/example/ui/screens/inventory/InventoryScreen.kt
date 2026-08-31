@@ -133,7 +133,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                         Icon(
                             if (needsAttention == 0) Icons.Default.CheckCircle else Icons.Default.WarningAmber,
                             contentDescription = null,
-                            tint = BrandOnGold,
+                            tint = Color.White,
                             modifier = Modifier.size(30.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
@@ -146,7 +146,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                                 },
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandOnGold
+                                color = Color.White
                             )
                             Text(
                                 if (outOfStock.isEmpty()) {
@@ -155,7 +155,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                                     "${outOfStock.size} finished completely"
                                 },
                                 fontSize = 13.sp,
-                                color = BrandOnGold.copy(alpha = 0.9f)
+                                color = Color.White.copy(alpha = 0.9f)
                             )
                         }
                     }
@@ -182,7 +182,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                                 },
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (selected) Color.White else TextSecondary,
+                                color = if (selected) BrandOnGold else TextSecondary,
                                 maxLines = 1,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
                             )

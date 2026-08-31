@@ -235,7 +235,7 @@ fun ActionCenterScreen(
                                 ) {
                                     Text(
                                         "${actionItems.size}",
-                                        color = BrandOnGold,
+                                        color = Color.White,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)

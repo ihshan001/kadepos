@@ -29,7 +29,7 @@ class CloudSyncWorker(
 
         // Make a rolling local backup before any cloud write. Daily backup runs
         // even when no Google account is connected yet.
-        val backup = backupManager.createBackup(settings.deviceName)
+        val backup = backupManager.createBackup(settings.deviceName.ifBlank { repo.displayDeviceName() })
         if (backup.file == null) {
             repo.update { it.copy(lastBackupAt = 0L, lastError = backup.message) }
             return Result.success()
@@ -75,7 +75,7 @@ class CloudSyncWorker(
 
         val uploaded = transport.upload(
             token = token,
-            deviceName = settings.deviceName.ifBlank { "counter" },
+            deviceName = repo.deviceId(),
             fileName = backup.file.name,
             file = backup.file
         )

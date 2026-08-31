@@ -2077,22 +2077,27 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             CloudSyncScheduler.cancel(application)
             return
         }
-        CloudSyncScheduler.cancel(application)
+        // Never cancel a manual sync when the screen is merely refreshed.
         if (settings.hourlySyncEnabled) {
             CloudSyncScheduler.schedule(application)
+        } else {
+            CloudSyncScheduler.cancelHourly(application)
         }
         if (settings.dailyBackupEnabled) {
             CloudSyncScheduler.scheduleDailyBackup(application)
+        } else {
+            CloudSyncScheduler.cancelDaily(application)
         }
     }
 
     /** Makes a rolling local backup copy of the whole shop database. */
-    fun backupNow() {
+    fun backupNow(onSuccess: (() -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
-            val deviceName = profile.value?.name.orEmpty().ifBlank { "counter" }
+            val deviceName = cloudRepo.displayDeviceName()
             val result = cloudBackup.createBackup(deviceName)
             val updated = cloudRepo.update {
                 it.copy(
+                    deviceName = cloudRepo.displayDeviceName(),
                     lastBackupAt = System.currentTimeMillis(),
                     lastBackupFile = result.file?.name.orEmpty(),
                     lastError = if (result.file == null) result.message else ""
@@ -2101,6 +2106,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             _cloudSettings.value = updated
             withContext(Dispatchers.Main) {
                 showMessage(if (result.file != null) "Backup saved on this device" else "Backup could not be created")
+                if (result.file != null) onSuccess?.invoke()
             }
         }
     }
@@ -2117,7 +2123,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         CloudSyncScheduler.syncNow(application)
-        showMessage("Sync queued. It runs as soon as this phone has data.")
+        showMessage("Sync queued. It runs as soon as this phone is online.")
     }
 
     /** Owner-visible action: choose the Gmail that receives this device's backups. */

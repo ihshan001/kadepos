@@ -47,16 +47,16 @@ private data class ExpenseKind(
 )
 
 private val expenseKinds = listOf(
-    ExpenseKind("Rent", Icons.Default.Store, StatusBlue),
-    ExpenseKind("Electricity", Icons.Default.Bolt, StatusAmber),
-    ExpenseKind("Water", Icons.Default.WaterDrop, StatusBlue),
+    ExpenseKind("Rent", Icons.Default.Store, BrandGoldDark),
+    ExpenseKind("Electricity", Icons.Default.Bolt, BrandGoldDark),
+    ExpenseKind("Water", Icons.Default.WaterDrop, BrandGoldDark),
     ExpenseKind("Transport", Icons.Default.LocalShipping, BrandGoldDark),
-    ExpenseKind("Staff pay", Icons.Default.Groups, StatusGreen),
-    ExpenseKind("Tea & food", Icons.Default.Restaurant, StatusAmber),
-    ExpenseKind("Repairs", Icons.Default.Build, StatusAmber),
-    ExpenseKind("Packaging", Icons.Default.Inventory2, TextSecondary),
-    ExpenseKind("Phone & internet", Icons.Default.Smartphone, StatusBlue),
-    ExpenseKind("Something else", Icons.Default.MoreHoriz, TextSecondary)
+    ExpenseKind("Staff pay", Icons.Default.Groups, BrandGoldDark),
+    ExpenseKind("Tea & food", Icons.Default.Restaurant, BrandGoldDark),
+    ExpenseKind("Repairs", Icons.Default.Build, BrandGoldDark),
+    ExpenseKind("Packaging", Icons.Default.Inventory2, BrandGoldDark),
+    ExpenseKind("Phone & internet", Icons.Default.Smartphone, BrandGoldDark),
+    ExpenseKind("Something else", Icons.Default.MoreHoriz, BrandGoldDark)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -132,7 +132,7 @@ fun ExpensesScreen(
                     label = "SPENT TODAY",
                     amount = todayTotal,
                     caption = "${CurrencyUtils.formatLkr(monthTotal)} so far this month",
-                    accent = BrandGoldDark
+                    accent = BrandGoldPrimary
                 )
             }
 
@@ -186,7 +186,7 @@ fun ExpensesScreen(
             title = kind.label,
             subtitle = "How much did you spend?",
             confirmLabel = "Save expense",
-            accent = BrandGoldDark,
+            accent = BrandGoldPrimary,
             onConfirm = { amount ->
                 viewModel.addExpense(kind.label, amount, "CASH", "", "")
                 adding = null
@@ -279,13 +279,13 @@ private fun ExpenseRow(expense: ExpenseEntity, onLongPress: () -> Unit) {
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background((kind?.tint ?: TextSecondary).copy(alpha = 0.12f)),
+                    .background((kind?.tint ?: BrandGoldDark).copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     kind?.icon ?: Icons.Default.Receipt,
                     contentDescription = null,
-                    tint = kind?.tint ?: TextSecondary,
+                    tint = kind?.tint ?: BrandGoldDark,
                     modifier = Modifier.size(18.dp)
                 )
             }

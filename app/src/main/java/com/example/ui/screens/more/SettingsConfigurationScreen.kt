@@ -791,8 +791,9 @@ fun SettingsConfigurationScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.backupNow()
-                                    showBackupSuccessDialog = true
+                                    viewModel.backupNow {
+                                        showBackupSuccessDialog = true
+                                    }
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).testTag("backup_data_btn")
@@ -1034,7 +1035,7 @@ fun SettingsConfigurationScreen(
             title = { Text("Backup Created", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Store database export complete.\n\nFile: ${name.lowercase().replace(" ", "_")}_backup_${System.currentTimeMillis()}.json\n\nContains all sales, customers, stock levels, suppliers, and cashier logs safely."
+                    "A full shop backup has been saved safely on this phone.\n\nIt contains all sales, customers, stock, suppliers, credit entries and audit history.\n\nOpen More > Backup & Cloud (when activated) to upload the same backup to Google Drive."
                 )
             },
             confirmButton = {
@@ -1095,7 +1096,7 @@ fun SettingsConfigurationScreen(
                         showFlushConfirmDialog = false
                         viewModel.clearAllBusinessData()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed, contentColor = Color.White)
                 ) {
                     Text("Yes, erase everything", fontWeight = FontWeight.Bold)
                 }

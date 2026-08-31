@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +48,7 @@ import com.example.ui.screens.sales.SalesHistoryScreen
 import com.example.ui.screens.sell.SellScreen
 import com.example.ui.theme.BrandGoldSurface
 import com.example.ui.theme.BrandGoldPrimary
-import com.example.ui.theme.KadePosTheme
+import com.example.ui.theme.ArroPosTheme
 import com.example.ui.theme.LightBackground
 import com.example.ui.theme.LightSurface
 import com.example.ui.theme.StatusRed
@@ -63,8 +64,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            KadePosTheme {
-                KadePosApp(viewModel = viewModel)
+            ArroPosTheme {
+                ArroPosApp(viewModel = viewModel)
             }
         }
     }
@@ -84,7 +85,7 @@ private data class NavEntry(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KadePosApp(viewModel: PosViewModel) {
+fun ArroPosApp(viewModel: PosViewModel) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val products by viewModel.products.collectAsStateWithLifecycle()
     val cart by viewModel.cart.collectAsStateWithLifecycle()
@@ -211,7 +212,9 @@ fun KadePosApp(viewModel: PosViewModel) {
                         icon = {
                             if (entry.badgeCount > 0) {
                                 BadgedBox(badge = {
-                                    Badge(containerColor = StatusRed) { Text("${entry.badgeCount}") }
+                                    Badge(containerColor = StatusRed) {
+                                        Text("${entry.badgeCount}", color = Color.White)
+                                    }
                                 }) {
                                     Icon(entry.icon, contentDescription = entry.label)
                                 }

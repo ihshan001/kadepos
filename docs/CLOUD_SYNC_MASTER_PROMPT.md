@@ -25,13 +25,13 @@ Facts about the current build that constrain every decision below:
 
 | Thing | Current state |
 |---|---|
-| Device storage | Room / SQLite. `kadepos_database`, currently **v5**, with real migrations |
-| Network | **None.** The app makes zero network calls today |
+| Device storage | Room / SQLite. `kadepos_database`, currently **v7**, with real migrations |
+| Network | **Offline-first.** Selling never needs a network. An optional, provider-controlled per-device Google Drive backup/sync can upload local snapshots; Drive is never on the selling path |
 | Printing | Real Bluetooth SPP + Wi-Fi TCP (port 9100) ESC/POS |
 | Identity | Per-staff 4-digit PIN. No accounts, no email, no server |
 | Roles | 19 permissions, 4 roles, per-person overrides as CSV on the staff row |
 | Money | LKR only, `Rs.` prefix |
-| Migrations | **Real migrations, v1→v5.** No destructive fallback. Schemas exported to `app/schemas` |
+| Migrations | **Real migrations, v1→v7.** No destructive fallback. Schemas exported to `app/schemas` |
 | Entities | 18 (see appendix) |
 | Optional features | Stock counting, credit book, cash drawer count, staff — each independently switchable |
 
@@ -645,7 +645,7 @@ Each phase must ship working.
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| ~~0~~ | ~~Real Room migrations~~ | **Done.** `data/db/Migrations.kt`, v1→v5, no destructive fallback |
+| ~~0~~ | ~~Real Room migrations~~ | **Done.** `data/db/Migrations.kt`, v1→v7, no destructive fallback |
 | ~~0b~~ | ~~Derive stock and credit from their ledgers~~ | **Done.** See Appendix C |
 | 1 | UUIDs, sync columns, outbox; writes populate the outbox | Outbox fills; app behaves identically |
 | 2 | MySQL schema, PHP API skeleton, HTTPS, `/status` | `curl` returns healthy |
@@ -735,7 +735,7 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 
 ## Appendix A: current schema
 
-Entities as of Room v5, in `data/model/Entities.kt` and
+Entities as of Room v7, in `data/model/Entities.kt` and
 `data/model/Notifications.kt`:
 
 ```
@@ -779,8 +779,8 @@ reasoning is not lost.
 
 ### 1. Real migrations — `data/db/Migrations.kt`
 
-`fallbackToDestructiveMigration` is gone. There are now four migrations
-covering v1→v5, registered via `ALL_MIGRATIONS`, and `exportSchema = true`
+`fallbackToDestructiveMigration` is gone. There are now six migrations
+covering v1→v7, registered via `ALL_MIGRATIONS`, and `exportSchema = true`
 writes every version's schema into `app/schemas` (committed) so Room can
 validate migrations at build time.
 

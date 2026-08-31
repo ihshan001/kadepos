@@ -85,7 +85,7 @@ fun MoneySheet(
                 CurrencyUtils.formatLkr(amount),
                 fontSize = 40.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (tooMuch) StatusRed else accent,
+                color = if (tooMuch) StatusRed else BrandGoldDark,
                 modifier = Modifier.testTag("money_amount")
             )
 
@@ -130,7 +130,7 @@ fun MoneySheet(
                                 label,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = accent,
+                                color = BrandGoldDark,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 modifier = Modifier.padding(vertical = 9.dp, horizontal = 4.dp)

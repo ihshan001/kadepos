@@ -2,6 +2,8 @@ package com.example.data.cloud
 
 import android.accounts.AccountManager
 import android.content.Context
+import android.os.Build
+import android.provider.Settings
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -89,7 +91,9 @@ class CloudSettingsRepository(context: Context) {
         if (code.isBlank()) return false
         val settings = load()
         if (settings.providerAccessCodeHash.isBlank()) return false
-        if (settings.providerEmail.isNotBlank() && email.isNotBlank() &&
+        // Once a provider Gmail is stored, the technician must enter it to
+        // unlock. An empty email is not accepted on a configured device.
+        if (settings.providerEmail.isNotBlank() &&
             !email.equals(settings.providerEmail, ignoreCase = true)
         ) return false
         val salt = prefs.getString(KEY_PROVIDER_SALT, "") ?: ""
@@ -100,6 +104,23 @@ class CloudSettingsRepository(context: Context) {
         val s = load()
         return s.providerEnabled || s.providerAccessCodeHash.isNotBlank()
     }
+
+    /**
+     * Stable per-device identifier. Two phones signed into the same Google
+     * account still get separate Drive folders, which is the per-device rule.
+     */
+    fun deviceId(): String = runCatching {
+        Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
+    }.getOrNull().orEmpty().ifBlank {
+        runCatching {
+            (Build.MODEL + Build.SERIAL).hashCode().toUInt().toString(16)
+        }.getOrNull().orEmpty().ifBlank {
+            "device-${System.currentTimeMillis().toString(16)}"
+        }
+    }
+
+    /** Short name shown to the owner; the full Android id stays in the folder. */
+    fun displayDeviceName(): String = load().deviceName.ifBlank { deviceId().take(8) }
 
     /** Google accounts already present on the device, so the owner does not have to type an address. */
     @Suppress("DEPRECATION")

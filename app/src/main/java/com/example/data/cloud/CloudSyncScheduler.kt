@@ -9,16 +9,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
-
-private object InfoState {
-    fun isActive(state: WorkInfo.State): Boolean = when (state) {
-        WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED -> true
-        else -> false
-    }
-}
 
 object CloudSyncScheduler {
     private const val PERIODIC_NAME = "kadepos_cloud_hourly"
@@ -85,9 +77,11 @@ object CloudSyncScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(MANUAL_NAME)
     }
 
-    fun isScheduled(context: Context): Boolean =
-        WorkManager.getInstance(context)
-            .getWorkInfosForUniqueWork(PERIODIC_NAME)
-            .get()
-            .any { InfoState.isActive(it.state) }
+    fun cancelHourly(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_NAME)
+    }
+
+    fun cancelDaily(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(DAILY_NAME)
+    }
 }

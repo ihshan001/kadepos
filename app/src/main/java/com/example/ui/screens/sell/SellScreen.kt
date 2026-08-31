@@ -1103,7 +1103,7 @@ fun ProductQuickCard(
                     Icon(
                         Icons.Default.Add,
                         contentDescription = "Add",
-                        tint = if (cartQty > 0) BrandOnGold else BrandGoldPrimary,
+                        tint = if (cartQty > 0) Color.White else BrandOnGold,
                         modifier = Modifier.size(15.dp)
                     )
                 }
@@ -2353,11 +2353,11 @@ fun QuickSaleDialog(
                             if (amount > 0) onSell(amount)
                         },
                         enabled = amountText.toDoubleOrNull() != null,
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusAmber),
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusAmber, contentColor = Color.White),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) {
-                        Text("ADD TOTAL TO BILL", fontWeight = FontWeight.Bold, color = BrandOnGold)
+                        Text("ADD TOTAL TO BILL", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -2958,8 +2958,8 @@ fun CheckoutSheet(
                                     modifier = Modifier.padding(vertical = 10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (splitRemainingMethod == "CREDIT") BrandOnGold else TextSecondary, modifier = Modifier.size(18.dp))
-                                    Text("As credit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CREDIT") BrandOnGold else TextPrimary)
+                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (splitRemainingMethod == "CREDIT") Color.White else TextSecondary, modifier = Modifier.size(18.dp))
+                                    Text("As credit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CREDIT") Color.White else TextPrimary)
                                 }
                             }
                         }

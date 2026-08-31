@@ -34,7 +34,7 @@ private val ArroColorScheme = lightColorScheme(
  * predictable.
  */
 @Composable
-fun KadePosTheme(content: @Composable () -> Unit) {
+fun ArroPosTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = ArroColorScheme,
         typography = Typography,
@@ -42,9 +42,9 @@ fun KadePosTheme(content: @Composable () -> Unit) {
     )
 }
 
-@Deprecated("Renamed to KadePosTheme", ReplaceWith("KadePosTheme(content)"))
+@Deprecated("Renamed to ArroPosTheme", ReplaceWith("ArroPosTheme(content)"))
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit
-) = KadePosTheme(content)
+) = ArroPosTheme(content)
