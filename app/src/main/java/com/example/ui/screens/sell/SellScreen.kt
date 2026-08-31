@@ -1746,7 +1746,7 @@ fun CartItemRow(
 }
 
 // -------------------------------------------------------------------------------------
-// Barcode Scanner Simulator Dialog
+// Barcode Entry Dialog (USB/Bluetooth keyboard scanner or manual entry)
 // -------------------------------------------------------------------------------------
 @Composable
 fun BarcodeEntryDialog(
