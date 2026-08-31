@@ -1114,7 +1114,6 @@ fun CashMovementDialog(
 // Team. Who works here, what each person is allowed to touch, and who is at
 // the till right now. Only reachable with MANAGE_STAFF.
 // ---------------------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StaffScreen(
     viewModel: PosViewModel,
