@@ -48,8 +48,39 @@ class SetupValidationTest {
     val skus = mutableSetOf<String>()
     ProductCatalogPresets.shopTypes.forEach { preset ->
       preset.products.forEach { product ->
-        assertTrue("duplicate barcode ${product.barcode}", barcodes.add(product.barcode))
+        // Services (a haircut, a screen repair) have no barcode by design.
+        if (product.barcode.isNotBlank()) {
+          assertTrue("duplicate barcode ${product.barcode}", barcodes.add(product.barcode))
+        }
         assertTrue("duplicate sku ${product.sku}", skus.add(product.sku))
+      }
+    }
+  }
+
+  @Test
+  fun `each shop type stamps its own key on every product`() {
+    ProductCatalogPresets.shopTypes.forEach { preset ->
+      preset.products.forEach { product ->
+        assertEquals(
+          "${product.name} should belong to ${preset.key}",
+          preset.key,
+          product.shopType
+        )
+      }
+    }
+  }
+
+  @Test
+  fun `no category name is shared between shop types`() {
+    val owner = mutableMapOf<String, String>()
+    ProductCatalogPresets.shopTypes.forEach { preset ->
+      preset.categories.forEach { category ->
+        val existing = owner[category.lowercase()]
+        assertTrue(
+          "category \"$category\" appears in both $existing and ${preset.key}",
+          existing == null
+        )
+        owner[category.lowercase()] = preset.key
       }
     }
   }

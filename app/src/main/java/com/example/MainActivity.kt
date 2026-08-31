@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -40,7 +39,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.Permission
 import com.example.ui.screens.auth.SignInScreen
-import com.example.ui.screens.customers.CustomersCreditScreen
 import com.example.ui.screens.inventory.InventoryScreen
 import com.example.ui.screens.more.MoreManagementHubScreen
 import com.example.ui.screens.onboarding.OnboardingFlow
