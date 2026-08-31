@@ -1,6 +1,6 @@
 package com.example.ui.screens.inventory
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,868 +20,542 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import com.example.data.model.Permission
 import com.example.data.model.ProductEntity
-import com.example.data.model.StockMovementEntity
-import com.example.ui.components.BatchReorderDialog
-import com.example.ui.components.LowStockRestockDialog
+import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosViewModel
+import kotlin.math.roundToInt
+
+/**
+ * Stock — "what am I about to run out of".
+ *
+ * The old screen led with total asset valuation and a stock-movement audit
+ * trail. A shop owner does not open this to value their business; they open it
+ * to find out what to buy. So the list is ordered by urgency: out of stock
+ * first, running low next, and everything that is fine is collapsed away.
+ *
+ * Two actions only: "Got more" (a delivery arrived) and "Recount" (the shelf
+ * disagrees with the phone).
+ */
+private enum class StockFilter(val label: String) {
+    NEEDS_ATTENTION("Need to buy"),
+    ALL("Everything")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InventoryScreen(
-    viewModel: PosViewModel
-) {
+fun InventoryScreen(viewModel: PosViewModel) {
+    val permissions by viewModel.permissions.collectAsState()
+    if (permissions.cannot(Permission.MANAGE_INVENTORY)) {
+        LockedScreenNotice(message = permissions.denialMessage(Permission.MANAGE_INVENTORY))
+        return
+    }
+
     val products by viewModel.products.collectAsState()
-    val lowStockProducts by viewModel.lowStockProducts.collectAsState()
-    val stockMovements by viewModel.stockMovements.collectAsState()
-    val profile by viewModel.profile.collectAsState()
-    val suppliers by viewModel.suppliers.collectAsState()
+    var search by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(StockFilter.NEEDS_ATTENTION) }
+    var receiving by remember { mutableStateOf<ProductEntity?>(null) }
+    var recounting by remember { mutableStateOf<ProductEntity?>(null) }
 
-    var selectedTab by remember { mutableStateOf(0) } // 0: Stock List & Alerts, 1: Stock Movements Log
-    var searchQuery by remember { mutableStateOf("") }
-    var movementFilter by remember { mutableStateOf("ALL") } // ALL, SALE, PURCHASE, ADJUST, RETURN
+    val tracked = remember(products) { products.filter { it.isTracked && !it.isArchived } }
 
-    var adjustingProduct by remember { mutableStateOf<ProductEntity?>(null) }
-    var receivingProduct by remember { mutableStateOf<ProductEntity?>(null) }
-    var restockProductForDialog by remember { mutableStateOf<ProductEntity?>(null) }
-    var showBatchReorderDialog by remember { mutableStateOf(false) }
-
-    val trackedProducts = remember(products) { products.filter { it.isTracked } }
-    val totalInventoryCost = remember(trackedProducts) {
-        trackedProducts.filter { it.currentStock > 0 }.sumOf { it.costPrice * it.currentStock }
+    val outOfStock = remember(tracked, search) {
+        tracked.filter { it.currentStock <= 0.0 }.filter { it.matches(search) }
+            .sortedBy { it.name.lowercase() }
     }
-    val totalRetailValue = remember(trackedProducts) {
-        trackedProducts.filter { it.currentStock > 0 }.sumOf { it.sellingPrice * it.currentStock }
+    val runningLow = remember(tracked, search) {
+        tracked.filter { it.currentStock > 0.0 && it.currentStock <= it.lowStockThreshold }
+            .filter { it.matches(search) }
+            .sortedBy { it.currentStock }
     }
-    val outOfStockCount = remember(trackedProducts) {
-        trackedProducts.count { it.currentStock <= 0 }
+    val healthy = remember(tracked, search) {
+        tracked.filter { it.currentStock > it.lowStockThreshold }.filter { it.matches(search) }
+            .sortedBy { it.name.lowercase() }
     }
-
-    val filteredTrackedProducts = remember(trackedProducts, searchQuery) {
-        if (searchQuery.isBlank()) trackedProducts
-        else trackedProducts.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-            it.category.contains(searchQuery, ignoreCase = true) ||
-            it.barcode.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    val filteredMovements = remember(stockMovements, movementFilter) {
-        if (movementFilter == "ALL") stockMovements
-        else stockMovements.filter { it.type.contains(movementFilter, ignoreCase = true) }
-    }
+    val needsAttention = outOfStock.size + runningLow.size
 
     Scaffold(
+        containerColor = LightBackground,
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Inventory & Stock Control", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
-                        Text("${trackedProducts.size} items monitored in warehouse", fontSize = 11.sp, color = TextSecondary)
-                    }
-                },
+                title = { Text("Stock", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
             )
-        },
-        containerColor = LightBackground
+        }
     ) { padding ->
-        Column(
+        if (tracked.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                EmptyState(
+                    icon = Icons.Default.Inventory2,
+                    title = "Nothing to count yet",
+                    message = "Items you choose to count stock for will appear here, so you can see what is running out."
+                )
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
         ) {
-            // 1. Inventory Health & Valuation KPI Card
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = LightSurface),
-                border = CardDefaults.outlinedCardBorder(),
-                modifier = Modifier.fillMaxWidth().testTag("inventory_kpi_card")
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("TOTAL ASSET VALUATION (COST)", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = TextSecondary)
-                            Text(
-                                CurrencyUtils.formatLkr(totalInventoryCost),
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = BrandTealPrimary
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("EST. RETAIL VALUE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                            Text(
-                                CurrencyUtils.formatLkr(totalRetailValue),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = StatusGreen
-                            )
-                        }
-                    }
-
-                    if (lowStockProducts.isNotEmpty() || outOfStockCount > 0) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = LightBorder)
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (lowStockProducts.isNotEmpty()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = StatusAmberBg
-                                    ) {
-                                        Text(
-                                            "${lowStockProducts.size} Low Stock",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StatusAmber,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                                if (outOfStockCount > 0) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = StatusRedBg
-                                    ) {
-                                        Text(
-                                            "$outOfStockCount Out of Stock",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StatusRed,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (lowStockProducts.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFF25D366),
-                                    modifier = Modifier.clickable { showBatchReorderDialog = true }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Chat, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Batch Reorder", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 2. Segmented Tab Selector
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = LightSurface,
-                contentColor = BrandTealPrimary,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp))
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = {
-                        Text(
-                            "📦 Stock On Hand (${trackedProducts.size})",
-                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
-                            fontSize = 13.sp
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = {
-                        Text(
-                            "📋 Audit Movements (${stockMovements.size})",
-                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
-                            fontSize = 13.sp
-                        )
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // TAB 0: Stock On Hand
-            if (selectedTab == 0) {
-                // Search
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Filter tracked stock by name, barcode, category...", fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp)) },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("inventory_search_bar"),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        focusedContainerColor = LightSurface,
-                        unfocusedContainerColor = LightSurface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (filteredTrackedProducts.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No tracked products match criteria", color = TextSecondary)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            items = filteredTrackedProducts,
-                            key = { it.id }
-                        ) { product ->
-                            StockItemCard(
-                                product = product,
-                                onReceive = { receivingProduct = product },
-                                onAdjust = { adjustingProduct = product },
-                                onReorder = { restockProductForDialog = product },
-                                onQuickStep = { delta ->
-                                    val newCount = (product.currentStock + delta).coerceAtLeast(0.0)
-                                    viewModel.adjustStock(product.id, newCount, "Quick Count", "Direct step adjustment")
-                                }
-                            )
-                        }
-                    }
-                }
-            } else {
-                // TAB 1: Audit Movements
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // The one sentence that matters.
+            item {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (needsAttention == 0) StatusGreen else StatusAmber,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val filters = listOf(
-                        "ALL" to "All History",
-                        "SALE" to "🛒 Sales",
-                        "PURCHASE" to "📦 Intake / PO",
-                        "ADJUST" to "⚖️ Adjustments",
-                        "RETURN" to "↩️ Returns"
-                    )
-                    items(filters) { (key, label) ->
-                        val isSel = movementFilter == key
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (isSel) BrandTealPrimary else LightSurface,
-                            border = if (isSel) null else CardDefaults.outlinedCardBorder(),
-                            modifier = Modifier.clickable { movementFilter = key }
-                        ) {
+                    Row(
+                        modifier = Modifier.padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (needsAttention == 0) Icons.Default.CheckCircle else Icons.Default.WarningAmber,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(30.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
                             Text(
-                                text = label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSel) Color.White else TextPrimary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                when {
+                                    needsAttention == 0 -> "Stock looks good"
+                                    needsAttention == 1 -> "1 item needs buying"
+                                    else -> "$needsAttention items need buying"
+                                },
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                            Text(
+                                if (outOfStock.isEmpty()) {
+                                    "${tracked.size} items counted"
+                                } else {
+                                    "${outOfStock.size} finished completely"
+                                },
+                                fontSize = 13.sp,
+                                color = Color.White.copy(alpha = 0.9f)
                             )
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (filteredMovements.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No stock movement audit records found", color = TextSecondary)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(filteredMovements) { mov ->
-                            StockMovementCard(movement = mov)
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(StockFilter.entries.toList(), key = { it.name }) { option ->
+                        val selected = filter == option
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (selected) BrandTealPrimary else LightSurface,
+                            border = BorderStroke(1.dp, if (selected) BrandTealPrimary else LightBorder),
+                            modifier = Modifier
+                                .clickable { filter = option }
+                                .testTag("stock_filter_${option.name}")
+                        ) {
+                            Text(
+                                if (option == StockFilter.NEEDS_ATTENTION && needsAttention > 0) {
+                                    "${option.label} ($needsAttention)"
+                                } else {
+                                    option.label
+                                },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selected) Color.White else TextSecondary,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
+                            )
                         }
                     }
+                }
+            }
+
+            if (tracked.size > 6) {
+                item {
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Search an item", fontSize = 14.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextMuted) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = LightSurface,
+                            unfocusedContainerColor = LightSurface,
+                            focusedBorderColor = BrandTealPrimary
+                        )
+                    )
+                }
+            }
+
+            if (outOfStock.isNotEmpty()) {
+                item { SectionLabel("Finished") }
+                items(outOfStock, key = { it.id }) { product ->
+                    StockRow(product, StockLevel.OUT, { receiving = product }, { recounting = product })
+                }
+            }
+
+            if (runningLow.isNotEmpty()) {
+                item { SectionLabel("Running low") }
+                items(runningLow, key = { it.id }) { product ->
+                    StockRow(product, StockLevel.LOW, { receiving = product }, { recounting = product })
+                }
+            }
+
+            if (filter == StockFilter.ALL && healthy.isNotEmpty()) {
+                item { SectionLabel("Plenty left") }
+                items(healthy, key = { it.id }) { product ->
+                    StockRow(product, StockLevel.OK, { receiving = product }, { recounting = product })
+                }
+            }
+
+            if (filter == StockFilter.NEEDS_ATTENTION && needsAttention == 0) {
+                item {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    EmptyState(
+                        icon = Icons.Default.CheckCircle,
+                        title = "Nothing to buy",
+                        message = "Every item you count has enough left. Tap Everything to see the full list."
+                    )
                 }
             }
         }
     }
 
-    if (adjustingProduct != null) {
-        StockAdjustmentDialog(
-            product = adjustingProduct!!,
-            onConfirm = { newCount, reason, note ->
-                viewModel.adjustStock(adjustingProduct!!.id, newCount, reason, note)
-                adjustingProduct = null
+    receiving?.let { product ->
+        ReceiveStockSheet(
+            product = product,
+            onConfirm = { qty, cost ->
+                viewModel.receiveStockDirect(product.id, qty, cost, "")
+                receiving = null
             },
-            onDismiss = { adjustingProduct = null }
+            onDismiss = { receiving = null }
         )
     }
 
-    if (receivingProduct != null) {
-        ReceiveStockDialog(
-            product = receivingProduct!!,
-            onConfirm = { qty, cost, supplier ->
-                viewModel.receiveStockDirect(receivingProduct!!.id, qty, cost, supplier)
-                receivingProduct = null
+    recounting?.let { product ->
+        RecountSheet(
+            product = product,
+            onConfirm = { actual ->
+                viewModel.adjustStock(product.id, actual, "Recount", "Counted on the shelf")
+                recounting = null
             },
-            onDismiss = { receivingProduct = null }
-        )
-    }
-
-    if (restockProductForDialog != null) {
-        LowStockRestockDialog(
-            initialProduct = restockProductForDialog!!,
-            lowStockList = lowStockProducts,
-            suppliers = suppliers,
-            profile = profile,
-            onReceiveStock = { prodId, qty, cost, supName ->
-                viewModel.receiveStockDirect(prodId, qty, cost, supName)
-            },
-            onOpenBatchReorder = {
-                restockProductForDialog = null
-                showBatchReorderDialog = true
-            },
-            onDismiss = { restockProductForDialog = null }
-        )
-    }
-
-    if (showBatchReorderDialog && lowStockProducts.isNotEmpty()) {
-        BatchReorderDialog(
-            lowStockList = lowStockProducts,
-            suppliers = suppliers,
-            profile = profile,
-            onBulkReceiveStock = { items, supName ->
-                viewModel.receiveBatchStockDirect(items, supName)
-            },
-            onDismiss = { showBatchReorderDialog = false }
+            onDismiss = { recounting = null }
         )
     }
 }
 
+private fun ProductEntity.matches(query: String): Boolean {
+    if (query.isBlank()) return true
+    val q = query.trim().lowercase()
+    return name.lowercase().contains(q) ||
+        barcode.contains(q) ||
+        category.lowercase().contains(q)
+}
+
+private enum class StockLevel { OUT, LOW, OK }
+
 @Composable
-fun StockItemCard(
+private fun StockRow(
     product: ProductEntity,
+    level: StockLevel,
     onReceive: () -> Unit,
-    onAdjust: () -> Unit,
-    onReorder: () -> Unit,
-    onQuickStep: (delta: Double) -> Unit
+    onRecount: () -> Unit
 ) {
-    val isLow = product.currentStock <= product.lowStockThreshold
-    val isOut = product.currentStock <= 0
-    val itemValuation = product.currentStock * product.costPrice
+    val (tint, bg, word) = when (level) {
+        StockLevel.OUT -> Triple(StatusRed, StatusRedBg, "Finished")
+        StockLevel.LOW -> Triple(StatusAmber, StatusAmberBg, "Only ${product.currentStock.clean()} left")
+        StockLevel.OK -> Triple(StatusGreen, StatusGreenBg, "${product.currentStock.clean()} ${product.unit}")
+    }
 
-    Card(
+    Surface(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = LightSurface),
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = Modifier.fillMaxWidth().testTag("stock_item_${product.id}")
+        color = LightSurface,
+        border = BorderStroke(1.dp, LightBorder),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            product.name,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
-                            color = TextPrimary
-                        )
-                        if (isOut) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(shape = RoundedCornerShape(4.dp), color = StatusRedBg) {
-                                Text("OUT", color = StatusRed, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                            }
-                        } else if (isLow) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(shape = RoundedCornerShape(4.dp), color = StatusAmberBg) {
-                                Text("LOW", color = StatusAmber, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        "${product.category} • Cost: ${CurrencyUtils.formatLkr(product.costPrice)} • Val: ${CurrencyUtils.formatLkr(itemValuation)}",
-                        fontSize = 11.sp,
-                        color = TextSecondary
-                    )
-                }
-
-                // Current On-Hand Count Pill
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = when {
-                        isOut -> StatusRedBg
-                        isLow -> StatusAmberBg
-                        else -> BrandMintSurface
-                    }
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(bg),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "${product.currentStock.toInt()} ${product.unit}",
-                        color = when {
-                            isOut -> StatusRed
-                            isLow -> StatusAmber
-                            else -> BrandTealPrimary
-                        },
+                        product.currentStock.clean(),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        color = tint
                     )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        product.name,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1
+                    )
+                    Text(word, fontSize = 12.sp, color = tint, fontWeight = FontWeight.Medium)
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = LightBorder)
-            Spacer(modifier = Modifier.height(8.dp))
 
-            // Action Row with Step + / - and Modal Triggers
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Quick +/- 1 Step
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { onQuickStep(-1.0) },
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("-1", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                    OutlinedButton(
-                        onClick = { onQuickStep(1.0) },
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("+1", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                }
-
-                // Modal Buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (isLow) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF25D366),
-                            modifier = Modifier.clickable(onClick = onReorder)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Chat, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reorder", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = onReceive,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandTealPrimary)
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("+ Intake", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
-                    }
-
-                    OutlinedButton(
-                        onClick = onAdjust,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("Audit", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StockMovementCard(movement: StockMovementEntity) {
-    val isPos = movement.changeQty > 0
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = LightSurface),
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onReceive,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    contentPadding = PaddingValues(vertical = 8.dp),
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(if (isPos) StatusGreenBg else StatusRedBg),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .testTag("receive_${product.id}")
                 ) {
-                    Icon(
-                        if (isPos) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                        contentDescription = null,
-                        tint = if (isPos) StatusGreen else StatusRed,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Got more", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column {
-                    Text(movement.productName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
-                    Text(
-                        "${movement.type} • ${CurrencyUtils.formatDateTime(movement.timestamp)}",
-                        fontSize = 11.sp,
-                        color = TextSecondary
-                    )
-                    if (movement.reason.isNotBlank()) {
-                        Text(movement.reason, fontSize = 10.sp, color = TextMuted)
-                    }
+                OutlinedButton(
+                    onClick = onRecount,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("recount_${product.id}")
+                ) {
+                    Text("Recount", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    (if (isPos) "+" else "") + "${movement.changeQty.toInt()}",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp,
-                    color = if (isPos) StatusGreen else StatusRed
-                )
-                Text("Bal: ${movement.stockAfter.toInt()}", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
             }
         }
     }
 }
 
+/** A delivery arrived: how many, and what it cost. Cost is optional. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StockAdjustmentDialog(
+private fun ReceiveStockSheet(
     product: ProductEntity,
-    onConfirm: (newCount: Double, reason: String, note: String) -> Unit,
+    onConfirm: (qty: Double, unitCost: Double) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var newCountText by remember { mutableStateOf(product.currentStock.toInt().toString()) }
-    var reason by remember { mutableStateOf("Count Audit") }
-    var note by remember { mutableStateOf("") }
+    var qty by remember { mutableStateOf(0) }
+    var costText by remember { mutableStateOf(if (product.costPrice > 0) product.costPrice.clean() else "") }
 
-    val currentCount = product.currentStock
-    val newCount = newCountText.toDoubleOrNull() ?: currentCount
-    val delta = newCount - currentCount
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LightSurface) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("PHYSICAL STOCK AUDIT", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
-                        Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
-                }
+            Text("Got more stock", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+            Text(
+                product.name,
+                fontSize = 14.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            Text(
+                "You have ${product.currentStock.clean()} ${product.unit} now",
+                fontSize = 12.sp,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 2.dp, bottom = 20.dp)
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Stepper(
+                value = qty,
+                onChange = { qty = it.coerceAtLeast(0) },
+                testTag = "receive_qty"
+            )
 
-                // Before -> After Box
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(6, 12, 24, 50).forEach { preset ->
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = BrandMintSurface,
+                        modifier = Modifier.clickable { qty = preset }
                     ) {
-                        Column {
-                            Text("System Stock", fontSize = 10.sp, color = TextSecondary)
-                            Text("${currentCount.toInt()} ${product.unit}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Adjustment Delta", fontSize = 10.sp, color = TextSecondary)
-                            Text(
-                                (if (delta >= 0) "+$delta" else "$delta") + " ${product.unit}",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 13.sp,
-                                color = if (delta >= 0) StatusGreen else StatusRed
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("New System Count", fontSize = 10.sp, color = TextSecondary)
-                            Text("${newCount.toInt()} ${product.unit}", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = newCountText,
-                    onValueChange = { newCountText = it },
-                    label = { Text("Actual Physical Stock Count") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text("Audit Reason", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Count Audit", "Damaged Goods", "Expired / Spoiled", "Found Extra").forEach { r ->
-                        FilterChip(
-                            selected = reason == r,
-                            onClick = { reason = r },
-                            label = { Text(r, fontSize = 10.sp, fontWeight = if (reason == r) FontWeight.Bold else FontWeight.Normal) }
+                        Text(
+                            "+$preset",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandTealPrimary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Audit Note (Optional)") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
-                    ),
-                    singleLine = true
-                )
+            OutlinedTextField(
+                value = costText,
+                onValueChange = { costText = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Cost for one (optional)") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+            )
 
+            if (qty > 0) {
                 Spacer(modifier = Modifier.height(14.dp))
-
-                Button(
-                    onClick = {
-                        val count = newCountText.toDoubleOrNull() ?: currentCount
-                        onConfirm(count, reason, note)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                Surface(
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                    color = BrandMintSurface,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("SAVE ADJUSTED COUNT", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        "You will have ${(product.currentStock + qty).clean()} ${product.unit}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandTealPrimary,
+                        modifier = Modifier.padding(14.dp)
+                    )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Button(
+                onClick = { onConfirm(qty.toDouble(), costText.toDoubleOrNull() ?: product.costPrice) },
+                enabled = qty > 0,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("confirm_receive")
+            ) {
+                Text("Add to stock", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
+/** The shelf disagrees with the phone. Type what is really there. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReceiveStockDialog(
+private fun RecountSheet(
     product: ProductEntity,
-    onConfirm: (qty: Double, unitCost: Double, supplierName: String) -> Unit,
+    onConfirm: (Double) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var qtyText by remember { mutableStateOf("10") }
-    var costText by remember { mutableStateOf(if (product.costPrice > 0) product.costPrice.toInt().toString() else "") }
-    var supplier by remember { mutableStateOf("") }
+    var actual by remember { mutableStateOf(product.currentStock.roundToInt()) }
+    val diff = actual - product.currentStock
 
-    val qty = qtyText.toDoubleOrNull() ?: 0.0
-    val cost = costText.toDoubleOrNull() ?: product.costPrice
-    val totalExpense = qty * cost
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LightSurface) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Text("Recount", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+            Text(product.name, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(top = 2.dp))
+            Text(
+                "Count what is actually on the shelf",
+                fontSize = 12.sp,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 2.dp, bottom = 20.dp)
+            )
+
+            Stepper(value = actual, onChange = { actual = it.coerceAtLeast(0) }, testTag = "recount_qty")
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (diff != 0.0) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (diff < 0) StatusRedBg else StatusGreenBg,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column {
-                        Text("RECEIVE GOODS / INTAKE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
-                        Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
+                    Text(
+                        if (diff < 0) {
+                            "${(-diff).clean()} ${product.unit} fewer than the phone thought"
+                        } else {
+                            "${diff.clean()} ${product.unit} more than the phone thought"
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (diff < 0) StatusRed else StatusGreen,
+                        modifier = Modifier.padding(14.dp)
+                    )
                 }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(5, 10, 25, 50, 100).forEach { amt ->
-                        OutlinedButton(
-                            onClick = { qtyText = amt.toString() },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.weight(1f).height(30.dp)
-                        ) {
-                            Text("+$amt", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = qtyText,
-                    onValueChange = { qtyText = it },
-                    label = { Text("Quantity to Add (+)") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = costText,
-                    onValueChange = { costText = it },
-                    label = { Text("Unit Cost (Rs.)") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = supplier,
-                    onValueChange = { supplier = it },
-                    label = { Text("Supplier / Vendor Name") },
-                    placeholder = { Text("e.g. Colombo Wholesale Agency", color = TextMuted) },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandTealPrimary,
-                        unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandTealPrimary
-                    ),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Total Intake Value:", fontSize = 12.sp, color = TextSecondary)
-                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandTealPrimary)
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
-                    onClick = {
-                        if (qty > 0) {
-                            onConfirm(qty, cost, supplier.ifBlank { "Direct Intake" })
-                        }
-                    },
-                    enabled = qty > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(48.dp)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("CONFIRM STOCK INTAKE", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
+            Button(
+                onClick = { onConfirm(actual.toDouble()) },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("confirm_recount")
+            ) {
+                Text("Save count", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
+
+/** Big plus/minus with the number between them. Works with one thumb. */
+@Composable
+private fun Stepper(value: Int, onChange: (Int) -> Unit, testTag: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalIconButton(
+            onClick = { onChange(value - 1) },
+            modifier = Modifier.size(56.dp),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = LightSurfaceVariant)
+        ) {
+            Icon(Icons.Default.Remove, contentDescription = "Less", tint = TextPrimary)
+        }
+        Text(
+            "$value",
+            fontSize = 40.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = TextPrimary,
+            modifier = Modifier
+                .widthIn(min = 110.dp)
+                .testTag(testTag),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        FilledTonalIconButton(
+            onClick = { onChange(value + 1) },
+            modifier = Modifier.size(56.dp),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandMintSurface)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "More", tint = BrandTealPrimary)
+        }
+    }
+}
+
+/** 12.0 -> "12", 12.5 -> "12.5". Shop owners do not want trailing zeroes. */
+private fun Double.clean(): String =
+    if (this % 1.0 == 0.0) toLong().toString() else "%.1f".format(this)

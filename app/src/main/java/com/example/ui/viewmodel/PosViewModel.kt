@@ -839,6 +839,57 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Record a delivery the simple way: supplier, total bill, how much was paid
+     * now. Most small shops get a handwritten invoice and do not want to key in
+     * every line item just to remember they owe money.
+     */
+    fun recordSupplierBill(
+        supplier: SupplierEntity?,
+        totalAmount: Double,
+        paidNow: Double,
+        invoiceNumber: String = "",
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            if (totalAmount <= 0.0) {
+                showMessage("Enter the bill amount first")
+                return@launch
+            }
+            val paid = paidNow.coerceIn(0.0, totalAmount)
+            val due = totalAmount - paid
+            val purchase = PurchaseEntity(
+                supplierId = supplier?.id,
+                supplierName = supplier?.name.orEmpty().ifBlank { "Supplier" },
+                invoiceNumber = invoiceNumber,
+                timestamp = System.currentTimeMillis(),
+                totalAmount = totalAmount,
+                paidAmount = paid,
+                dueAmount = due,
+                paymentStatus = when {
+                    due <= 0.0 -> "PAID"
+                    paid > 0.0 -> "PARTIAL"
+                    else -> "DUE"
+                },
+                itemsCount = 0,
+                notes = notes
+            )
+            repository.insertPurchase(purchase, emptyList())
+            audit(
+                action = "PURCHASE",
+                description = "Bill from ${purchase.supplierName} for ${CurrencyUtils.formatLkr(totalAmount)}",
+                amount = totalAmount
+            )
+            showMessage(
+                if (due > 0) {
+                    "Saved. You still owe ${CurrencyUtils.formatLkr(due)}."
+                } else {
+                    "Saved and fully paid."
+                }
+            )
+        }
+    }
+
     // --- Inventory direct actions ---
     fun receiveStockDirect(productId: Long, qty: Double, unitCost: Double, supplierName: String) {
         viewModelScope.launch {
