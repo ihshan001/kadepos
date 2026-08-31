@@ -103,6 +103,7 @@ enum class MoreDestination {
 class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: PosRepository
+    private val appContext: Application = getApplication()
 
     private val cloudRepo = CloudSettingsRepository(application)
     private val cloudBackup = CloudBackupManager(application)
@@ -2074,19 +2075,19 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         val settings = cloudRepo.load()
         _cloudSettings.value = settings
         if (!settings.providerEnabled) {
-            CloudSyncScheduler.cancel(application)
+            CloudSyncScheduler.cancel(appContext)
             return
         }
         // Never cancel a manual sync when the screen is merely refreshed.
         if (settings.hourlySyncEnabled) {
-            CloudSyncScheduler.schedule(application)
+            CloudSyncScheduler.schedule(appContext)
         } else {
-            CloudSyncScheduler.cancelHourly(application)
+            CloudSyncScheduler.cancelHourly(appContext)
         }
         if (settings.dailyBackupEnabled) {
-            CloudSyncScheduler.scheduleDailyBackup(application)
+            CloudSyncScheduler.scheduleDailyBackup(appContext)
         } else {
-            CloudSyncScheduler.cancelDaily(application)
+            CloudSyncScheduler.cancelDaily(appContext)
         }
     }
 
@@ -2122,7 +2123,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             showMessage("Connect a Google account before syncing")
             return
         }
-        CloudSyncScheduler.syncNow(application)
+        CloudSyncScheduler.syncNow(appContext)
         showMessage("Sync queued. It runs as soon as this phone is online.")
     }
 
@@ -2139,10 +2140,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
         _cloudSettings.value = updated
         if (updated.providerEnabled && updated.hourlySyncEnabled) {
-            CloudSyncScheduler.schedule(application)
+            CloudSyncScheduler.schedule(appContext)
         }
         showMessage("Google account connected for backup")
-        audit("SETTINGS", "Connected Google account ${clean.take(6)}… for backup", 0.0)
+        viewModelScope.launch {
+            audit("SETTINGS", "Connected Google account ${clean.take(6)}… for backup", 0.0)
+        }
     }
 
     /** Providers only. Writes the master policy/access code. Returns false when required provider info is missing. */
@@ -2178,14 +2181,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
         _cloudSettings.value = cloudRepo.load()
         if (updated.providerEnabled) {
-            CloudSyncScheduler.cancel(application)
-            if (updated.hourlySyncEnabled) CloudSyncScheduler.schedule(application)
-            if (updated.dailyBackupEnabled) CloudSyncScheduler.scheduleDailyBackup(application)
+            CloudSyncScheduler.cancel(appContext)
+            if (updated.hourlySyncEnabled) CloudSyncScheduler.schedule(appContext)
+            if (updated.dailyBackupEnabled) CloudSyncScheduler.scheduleDailyBackup(appContext)
         } else {
-            CloudSyncScheduler.cancel(application)
+            CloudSyncScheduler.cancel(appContext)
         }
         showMessage(if (enabled) "Cloud backup activated for this device" else "Cloud backup deactivated")
-        audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
+        viewModelScope.launch {
+            audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
+        }
         return true
     }
 

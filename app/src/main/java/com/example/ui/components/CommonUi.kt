@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.BrandGoldSurface
 import com.example.ui.theme.BrandGoldPrimary
+import com.example.ui.theme.BrandOnGold
 import com.example.ui.theme.LightBorder
 import com.example.ui.theme.LightSurface
 import com.example.ui.theme.StatusAmber

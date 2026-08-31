@@ -82,6 +82,11 @@ fun InventoryScreen(viewModel: PosViewModel) {
         tracked.filter { it.currentStock > it.lowStockThreshold }.filter { it.matches(search) }
             .sortedBy { it.name.lowercase() }
     }
+    val recentStock = remember(stockMovements) {
+        stockMovements
+            .filter { it.type == "PURCHASE" || it.type == "INITIAL" || it.type.startsWith("ADJUST_") }
+            .take(6)
+    }
     val needsAttention = outOfStock.size + runningLow.size
 
     Scaffold(
@@ -191,11 +196,6 @@ fun InventoryScreen(viewModel: PosViewModel) {
                 }
             }
 
-            val recentStock = remember(stockMovements) {
-                stockMovements
-                    .filter { it.type == "PURCHASE" || it.type == "INITIAL" || it.type.startsWith("ADJUST_") }
-                    .take(6)
-            }
             if (recentStock.isNotEmpty()) {
                 item {
                     Card(
