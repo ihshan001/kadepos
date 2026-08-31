@@ -53,7 +53,7 @@ fun SettingsConfigurationScreen(
     var selectedSection by remember { mutableStateOf(SettingsSection.ALL) }
 
     // Form state initialized from profile
-    var name by remember(profile) { mutableStateOf(profile?.name ?: "ABC Stores") }
+    var name by remember(profile) { mutableStateOf(profile?.name.orEmpty()) }
     var businessType by remember(profile) { mutableStateOf(profile?.businessType ?: "Retail") }
     var phone by remember(profile) { mutableStateOf(profile?.phone ?: "+94 77 123 4567") }
     var address by remember(profile) { mutableStateOf(profile?.address ?: "123 Galle Road, Colombo") }
@@ -64,7 +64,12 @@ fun SettingsConfigurationScreen(
     // Receipts & Printer
     var receiptFooter by remember(profile) { mutableStateOf(profile?.receiptFooter ?: "Thank you for shopping with us! Please come again.") }
     var receiptShowQr by remember(profile) { mutableStateOf(profile?.receiptShowQr ?: true) }
-    var printerName by remember(profile) { mutableStateOf(profile?.printerName ?: "MTP-58 (Bluetooth)") }
+    var printerName by remember(profile) { mutableStateOf(profile?.printerName.orEmpty()) }
+
+    // Real catalogue rows drive the receipt preview.
+    val allProducts by viewModel.products.collectAsState()
+    val previewItems = remember(allProducts) { allProducts.take(2) }
+    val previewTotal = remember(previewItems) { previewItems.sumOf { it.sellingPrice } }
     var printerWidth by remember(profile) { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
     var autoPrint by remember(profile) { mutableStateOf(profile?.autoPrint ?: false) }
     var receiptStyle by remember(profile) { mutableStateOf(profile?.receiptStyle ?: "Modern") }
@@ -108,7 +113,7 @@ fun SettingsConfigurationScreen(
                             val current = profile ?: BusinessProfileEntity()
                             viewModel.saveBusinessProfile(
                                 current.copy(
-                                    name = name.trim().ifBlank { "ABC Stores" },
+                                    name = name.trim(),
                                     businessType = businessType,
                                     phone = phone.trim(),
                                     address = address.trim(),
@@ -555,7 +560,7 @@ fun SettingsConfigurationScreen(
                         val current = profile ?: BusinessProfileEntity()
                         viewModel.saveBusinessProfile(
                             current.copy(
-                                name = name.trim().ifBlank { "ABC Stores" },
+                                name = name.trim(),
                                 businessType = businessType,
                                 phone = phone.trim(),
                                 address = address.trim(),
@@ -633,18 +638,26 @@ fun SettingsConfigurationScreen(
                             Text(address, fontSize = 10.sp, color = ReceiptText)
                             Text(phone, fontSize = 10.sp, color = ReceiptText)
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Test Item 500ml", fontSize = 11.sp, color = ReceiptText)
-                                Text("Rs. 240.00", fontSize = 11.sp, color = ReceiptText, fontWeight = FontWeight.Bold)
+                            // Preview uses this shop's real items, so what you
+                            // see is what the printer will actually produce.
+                            previewItems.forEach { previewItem ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(previewItem.name, fontSize = 11.sp, color = ReceiptText)
+                                    Text(
+                                        CurrencyUtils.formatLkr(previewItem.sellingPrice),
+                                        fontSize = 11.sp,
+                                        color = ReceiptText,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Test Bakery Loaf", fontSize = 11.sp, color = ReceiptText)
-                                Text("Rs. 180.00", fontSize = 11.sp, color = ReceiptText, fontWeight = FontWeight.Bold)
+                            if (previewItems.isEmpty()) {
+                                Text("Add items to see them here", fontSize = 11.sp, color = ReceiptDashed)
                             }
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("TOTAL PAID (CASH)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ReceiptText)
-                                Text("Rs. 420.00", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(receiptFooter, fontSize = 9.sp, color = ReceiptText)

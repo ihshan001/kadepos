@@ -1,6 +1,6 @@
 {
-  "name": "The System",
-  "description": "Offline-first universal POS and billing system for Sri Lankan businesses. Sell, print receipts, track inventory, manage credit book, suppliers, expenses, and cash shifts seamlessly.",
+  "name": "KadePOS",
+  "description": "A pocket POS for every Sri Lankan business. Open, sell, take payment and print \u2014 offline, from your phone. Stock, credit book, customers, suppliers and reports grow with you.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

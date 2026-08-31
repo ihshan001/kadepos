@@ -29,6 +29,9 @@ import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.data.model.Permission
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Print
 import com.example.ui.viewmodel.MoreDestination
 import com.example.ui.viewmodel.PosViewModel
 
@@ -60,6 +63,12 @@ fun MoreManagementHubScreen(
                 onNavigateToDestination = { dest -> onSelectDestination(dest) }
             )
             MoreDestination.SETTINGS -> SettingsConfigurationScreen(viewModel = viewModel, onBack = onBackToHub)
+            MoreDestination.PRINTER -> com.example.ui.screens.printer.PrinterSetupScreen(
+                viewModel = viewModel,
+                profile = viewModel.profile.collectAsState().value,
+                onBack = onBackToHub
+            )
+            MoreDestination.ACTIVITY_LOG -> ActivityLogScreen(viewModel = viewModel, onBack = onBackToHub)
         }
     }
 }
@@ -74,11 +83,25 @@ fun HubMenuScreen(
     onSelectDestination: (MoreDestination) -> Unit
 ) {
     val profile by viewModel.profile.collectAsState()
+    val permissions by viewModel.permissions.collectAsState()
+    val customers by viewModel.customers.collectAsState()
+    val lowStock by viewModel.lowStockProducts.collectAsState()
+    val printerConnected by viewModel.isPrinterConnected.collectAsState()
+
+    val tracksStock = profile?.trackStock == true
+    val creditEnabled = profile?.creditEnabled == true
+    val customersOwing = customers.count { it.creditBalance > 0 }
+    val alertCount = lowStock.size + customersOwing
+    val printerSubtitle = when {
+        printerConnected -> "Connected to ${profile?.printerName.orEmpty().ifBlank { "your printer" }}"
+        profile?.printerName.orEmpty().isNotBlank() -> "Saved, but not connected right now"
+        else -> "Connect a Bluetooth or Wi-Fi printer"
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Management & Tools", fontWeight = FontWeight.Bold) },
+                title = { Text("More", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }) {
                         Icon(Icons.Default.Notifications, contentDescription = "Action Center", tint = BrandTealPrimary)
@@ -98,88 +121,147 @@ fun HubMenuScreen(
         ) {
             item {
                 HubActionCard(
-                    title = "Action Center & Alerts",
-                    subtitle = "Low stock alerts, pending payables, overdue Khata balance",
+                    title = "Things needing attention",
+                    subtitle = "Low stock, money owed to you, bills to pay",
                     icon = Icons.Default.NotificationsActive,
-                    badge = "Action",
+                    badge = if (alertCount > 0) "$alertCount" else null,
                     onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }
                 )
             }
 
-            item {
-                Text("BUSINESS HUBS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
+            item { SectionHeading("Money") }
+
+            if (permissions.can(Permission.VIEW_REPORTS)) {
+                item {
+                    HubActionCard(
+                        title = "Reports",
+                        subtitle = "What you sold and what you earned",
+                        icon = Icons.Default.BarChart,
+                        onClick = { onSelectDestination(MoreDestination.REPORTS) }
+                    )
+                }
             }
+
+            if (creditEnabled && permissions.can(Permission.MANAGE_CUSTOMERS)) {
+                item {
+                    HubActionCard(
+                        title = "Credit book",
+                        subtitle = if (customersOwing > 0) {
+                            "$customersOwing ${if (customersOwing == 1) "customer owes" else "customers owe"} you money"
+                        } else {
+                            "Nobody owes you right now"
+                        },
+                        icon = Icons.Default.Book,
+                        onClick = { onSelectDestination(MoreDestination.CREDIT_BOOK) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_CASH)) {
+                item {
+                    HubActionCard(
+                        title = "Cash drawer",
+                        subtitle = "Open the day, count cash, close the day",
+                        icon = Icons.Default.PointOfSale,
+                        onClick = { onSelectDestination(MoreDestination.REGISTER) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_EXPENSES)) {
+                item {
+                    HubActionCard(
+                        title = "Expenses",
+                        subtitle = "Rent, electricity, transport and other costs",
+                        icon = Icons.Default.Receipt,
+                        onClick = { onSelectDestination(MoreDestination.EXPENSES) }
+                    )
+                }
+            }
+
+            if (tracksStock && permissions.can(Permission.MANAGE_SUPPLIERS)) {
+                item { SectionHeading("Stock") }
+                item {
+                    HubActionCard(
+                        title = "Suppliers and purchases",
+                        subtitle = "Who you buy from and what you still owe them",
+                        icon = Icons.Default.LocalShipping,
+                        onClick = { onSelectDestination(MoreDestination.SUPPLIERS) }
+                    )
+                }
+            }
+
+            item { SectionHeading("Shop setup") }
 
             item {
                 HubActionCard(
-                    title = "Business Reports & Profit",
-                    subtitle = "Turnover, gross profit, sales breakdown",
-                    icon = Icons.Default.BarChart,
-                    badge = "Insights",
-                    onClick = { onSelectDestination(MoreDestination.REPORTS) }
+                    title = "Printer",
+                    subtitle = printerSubtitle,
+                    icon = Icons.Default.Print,
+                    onClick = { onSelectDestination(MoreDestination.PRINTER) }
                 )
             }
 
-            item {
-                HubActionCard(
-                    title = "Customer Credit Book",
-                    subtitle = "Customer receivables, pay later balances, WhatsApp reminders",
-                    icon = Icons.Default.Book,
-                    badge = "Khata",
-                    onClick = { onSelectDestination(MoreDestination.CREDIT_BOOK) }
-                )
+            if (permissions.can(Permission.MANAGE_STAFF)) {
+                item {
+                    HubActionCard(
+                        title = "My team",
+                        subtitle = "Add staff and choose what each person can do",
+                        icon = Icons.Default.Badge,
+                        onClick = { onSelectDestination(MoreDestination.STAFF) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_SETTINGS)) {
+                item {
+                    HubActionCard(
+                        title = "Shop details and receipt",
+                        subtitle = "Name, address, phone, what prints on the bill",
+                        icon = Icons.Default.Settings,
+                        onClick = { onSelectDestination(MoreDestination.SETTINGS) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.VIEW_AUDIT_LOG)) {
+                item {
+                    HubActionCard(
+                        title = "Activity log",
+                        subtitle = "Every refund, price change and sign-in",
+                        icon = Icons.Default.History,
+                        onClick = { onSelectDestination(MoreDestination.ACTIVITY_LOG) }
+                    )
+                }
             }
 
             item {
-                HubActionCard(
-                    title = "Suppliers & Purchases",
-                    subtitle = "Manage vendors, restock invoices, payables",
-                    icon = Icons.Default.LocalShipping,
-                    onClick = { onSelectDestination(MoreDestination.SUPPLIERS) }
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(onClick = { viewModel.signOut() }) {
+                        Text("Sign out", color = StatusRed, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
-            item {
-                HubActionCard(
-                    title = "Shop Expenses Tracker",
-                    subtitle = "Electricity, rent, transport, tea, packaging",
-                    icon = Icons.Default.Receipt,
-                    onClick = { onSelectDestination(MoreDestination.EXPENSES) }
-                )
-            }
-
-            item {
-                HubActionCard(
-                    title = "Cash Register & Shifts",
-                    subtitle = "Counter drawer cash in/out, shift handovers",
-                    icon = Icons.Default.PointOfSale,
-                    onClick = { onSelectDestination(MoreDestination.REGISTER) }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("TEAM & SETTINGS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-            }
-
-            item {
-                HubActionCard(
-                    title = "Staff & Cashiers",
-                    subtitle = "Current cashier: ${profile?.activeStaffName ?: "Staff"}",
-                    icon = Icons.Default.Badge,
-                    onClick = { onSelectDestination(MoreDestination.STAFF) }
-                )
-            }
-
-            item {
-                HubActionCard(
-                    title = "Store & Printer Settings",
-                    subtitle = "Business profile, thermal printer, receipt footer",
-                    icon = Icons.Default.Settings,
-                    onClick = { onSelectDestination(MoreDestination.SETTINGS) }
-                )
-            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    Column {
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextSecondary
+        )
     }
 }
 
@@ -819,7 +901,7 @@ fun CashRegisterScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Opened by ${shift?.staffName ?: "Aslam"} at ${shift?.counterName ?: "Counter 01"} (${CurrencyUtils.formatTimeOnly(shift?.openedAt ?: System.currentTimeMillis())})",
+                        "Opened by ${shift?.staffName.orEmpty().ifBlank { "you" }} at ${shift?.counterName.orEmpty().ifBlank { "the counter" }} (${CurrencyUtils.formatTimeOnly(shift?.openedAt ?: System.currentTimeMillis())})",
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.9f)
                     )
@@ -1009,7 +1091,7 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val profile by viewModel.profile.collectAsState()
-    var name by remember { mutableStateOf(profile?.name ?: "ABC Stores") }
+    var name by remember { mutableStateOf(profile?.name.orEmpty()) }
     var phone by remember { mutableStateOf(profile?.phone ?: "077 123 4567") }
     var address by remember { mutableStateOf(profile?.address ?: "123 Main Street, Colombo") }
     var footer by remember { mutableStateOf(profile?.receiptFooter ?: "Thank you!") }
@@ -1136,6 +1218,92 @@ fun SettingsScreen(
                     Icon(Icons.Default.RestartAlt, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Re-run Setup Wizard")
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// Activity Log — a plain, readable trail of everything that matters
+// -------------------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActivityLogScreen(
+    viewModel: PosViewModel,
+    onBack: () -> Unit
+) {
+    val entries by viewModel.auditLog.collectAsState()
+    val permissions by viewModel.permissions.collectAsState()
+
+    if (!permissions.can(Permission.VIEW_AUDIT_LOG)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = permissions.denialMessage(Permission.VIEW_AUDIT_LOG),
+            onBack = onBack
+        )
+        return
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Activity log", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
+            )
+        },
+        containerColor = LightBackground
+    ) { padding ->
+        if (entries.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                com.example.ui.components.EmptyState(
+                    icon = Icons.Default.History,
+                    title = "Nothing here yet",
+                    message = "Refunds, price changes, sign-ins and settings changes will show up here."
+                )
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(entries, key = { it.id }) { entry ->
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = LightSurface),
+                    border = CardDefaults.outlinedCardBorder(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                entry.description,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "${entry.staffName.ifBlank { "Someone" }} • ${CurrencyUtils.formatDateTime(entry.timestamp)}",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

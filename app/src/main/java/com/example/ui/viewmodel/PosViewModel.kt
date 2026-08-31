@@ -18,14 +18,22 @@ import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
 import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
+import com.example.data.model.AuditLogEntity
+import com.example.data.model.Permission
+import com.example.data.model.PermissionSet
+import com.example.data.model.StaffRole
 import com.example.data.repository.PosRepository
-import com.example.data.service.BluetoothPrinterService
-import com.example.data.service.BluetoothPrinterState
+import com.example.data.service.PrinterDevice
+import com.example.data.service.PrinterService
+import com.example.data.service.PrinterStatus
+import com.example.data.service.PrinterTransport
 import com.example.ui.util.CurrencyUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -45,9 +53,9 @@ data class CartItem(
 
 enum class PosTab(val title: String) {
     SELL("Sell"),
-    SALES("Sales"),
-    PRODUCTS("Products"),
-    INVENTORY("Inventory"),
+    SALES("Bills"),
+    PRODUCTS("Items"),
+    INVENTORY("Stock"),
     MORE("More")
 }
 
@@ -62,6 +70,8 @@ enum class MoreDestination {
     STAFF,
     REGISTER,
     NOTIFICATIONS,
+    PRINTER,
+    ACTIVITY_LOG,
     SETTINGS
 }
 
@@ -69,15 +79,35 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: PosRepository
 
+    /** Real Bluetooth / Wi-Fi thermal printing. */
+    val printerService = PrinterService(application)
+
     init {
         val db = PosDatabase.getDatabase(application)
         repository = PosRepository(db.posDao())
 
         viewModelScope.launch {
-            repository.businessProfile.collect { prof ->
-                if (prof != null && !prof.isConfigured && _onboardingStep.value == 0) {
-                    _onboardingStep.value = 1
-                }
+            // Make sure a profile row always exists so the setup wizard has
+            // something to write into.
+            if (repository.getProfileSync() == null) {
+                repository.saveProfile(BusinessProfileEntity())
+            }
+        }
+
+        // Silently reconnect to the saved printer on launch.
+        viewModelScope.launch {
+            val saved = repository.getProfileSync()
+            if (saved != null && saved.printerAddress.isNotBlank() &&
+                saved.printerConnectionType != "NONE"
+            ) {
+                printerService.reconnectSaved(
+                    name = saved.printerName,
+                    address = saved.printerAddress,
+                    transport = runCatching {
+                        PrinterTransport.valueOf(saved.printerConnectionType)
+                    }.getOrDefault(PrinterTransport.BLUETOOTH),
+                    port = saved.printerPort
+                )
             }
         }
     }
@@ -197,6 +227,128 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     // Active UI Messages (Snackbar / Toast notifications)
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage = _userMessage.asStateFlow()
+
+    val auditLog: StateFlow<List<AuditLogEntity>> = repository.auditLog.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    // ------------------------------------------------------------------
+    // Who is using the app right now (role based access)
+    // ------------------------------------------------------------------
+
+    /** Set once someone signs in with their PIN. Null means nobody yet. */
+    private val _signedInStaffId = MutableStateFlow<Long?>(null)
+    val signedInStaffId = _signedInStaffId.asStateFlow()
+
+    /**
+     * The permissions in force. Solo shops (staff turned off during setup) run
+     * as Owner without ever seeing a PIN screen.
+     */
+    val permissions: StateFlow<PermissionSet> =
+        combine(profile, staffList, _signedInStaffId) { prof, staff, signedId ->
+            when {
+                prof == null -> PermissionSet.ownerFallback
+                !prof.staffEnabled -> PermissionSet.of(StaffRole.OWNER, 0L, prof.name.ifBlank { "Owner" })
+                else -> {
+                    val member = staff.firstOrNull { it.id == signedId }
+                    if (member == null) {
+                        PermissionSet.ownerFallback.copy(granted = emptySet())
+                    } else {
+                        PermissionSet.of(StaffRole.fromName(member.role), member.id, member.name)
+                    }
+                }
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PermissionSet.ownerFallback
+        )
+
+    /** True when the PIN screen must be shown before the app can be used. */
+    val requiresSignIn: StateFlow<Boolean> =
+        combine(profile, staffList, _signedInStaffId) { prof, staff, signedId ->
+            prof != null &&
+                prof.isConfigured &&
+                prof.staffEnabled &&
+                staff.any { it.isActive && it.pin.isNotBlank() } &&
+                staff.none { it.id == signedId }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
+    fun can(permission: Permission): Boolean = permissions.value.can(permission)
+
+    /**
+     * Runs [block] only if the signed-in user is allowed to; otherwise shows a
+     * plain-language explanation. Returns whether it ran.
+     */
+    fun requirePermission(permission: Permission, block: () -> Unit): Boolean {
+        return if (can(permission)) {
+            block()
+            true
+        } else {
+            showMessage(permissions.value.denialMessage(permission))
+            false
+        }
+    }
+
+    /** Sign in with a 4 digit PIN. Returns null on success or an error text. */
+    fun signInWithPin(pin: String): String? {
+        val match = staffList.value.firstOrNull { it.isActive && it.pin == pin && pin.isNotBlank() }
+        return if (match == null) {
+            "That PIN did not match. Please try again."
+        } else {
+            _signedInStaffId.value = match.id
+            viewModelScope.launch {
+                repository.saveProfile(
+                    (repository.getProfileSync() ?: BusinessProfileEntity()).copy(
+                        activeStaffId = match.id,
+                        activeStaffName = match.name,
+                        activeStaffRole = match.role
+                    )
+                )
+                repository.recordAudit(
+                    staffId = match.id,
+                    staffName = match.name,
+                    action = "LOGIN",
+                    description = "${match.name} signed in as ${match.role}"
+                )
+            }
+            showMessage("Welcome back, ${match.name}")
+            null
+        }
+    }
+
+    fun signOut() {
+        val who = permissions.value
+        _signedInStaffId.value = null
+        _selectedTab.value = PosTab.SELL
+        _moreDestination.value = null
+        viewModelScope.launch {
+            repository.recordAudit(who.staffId, who.staffName, "LOGOUT", "${who.staffName} signed out")
+        }
+    }
+
+    private suspend fun audit(
+        action: String,
+        description: String,
+        amount: Double = 0.0,
+        reference: String = ""
+    ) {
+        val who = permissions.value
+        repository.recordAudit(
+            staffId = who.staffId,
+            staffName = who.staffName.ifBlank { "Owner" },
+            action = action,
+            description = description,
+            amount = amount,
+            reference = reference
+        )
+    }
 
     fun selectTab(tab: PosTab) {
         _selectedTab.value = tab
@@ -369,10 +521,24 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val saleId = repository.completeSale(sale, saleItems)
-            _lastCompletedSale.value = sale.copy(id = saleId)
-            _lastCompletedItems.value = saleItems.map { it.copy(saleId = saleId) }
+            val storedSale = sale.copy(id = saleId)
+            val storedItems = saleItems.map { it.copy(saleId = saleId) }
+            _lastCompletedSale.value = storedSale
+            _lastCompletedItems.value = storedItems
             _showSaleSuccessDialog.value = true
+            audit(
+                action = "SALE",
+                description = "Bill ${sale.invoiceNumber} completed (${paymentMethod.lowercase()})",
+                amount = finalTotal,
+                reference = sale.invoiceNumber
+            )
             clearCart()
+
+            // Print straight away when the owner asked for it during setup.
+            val prof = repository.getProfileSync()
+            if (prof?.autoPrint == true && printerService.isConnected) {
+                printBillReceipt(storedSale, storedItems)
+            }
         }
     }
 
@@ -383,15 +549,19 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     // --- Hold / Park Sale ---
     fun holdCurrentSale(label: String) {
         val cartItems = _cart.value
-        if (cartItems.isEmpty()) return
+        if (cartItems.isEmpty()) {
+            showMessage("Add something to the bill first")
+            return
+        }
 
         val total = (cartItems.sumOf { it.lineTotal } - _billDiscount.value).coerceAtLeast(0.0)
         val customer = _selectedCustomer.value
         val held = HeldSaleEntity(
-            label = label.ifBlank { "Held #${(1000..9999).random()}" },
+            label = label.ifBlank { "Bill ${CurrencyUtils.formatTimeOnly(System.currentTimeMillis())}" },
             customerId = customer?.id,
             customerName = customer?.name ?: "Walk-in",
-            cartJson = "",
+            // The exact cart is stored so resuming restores every line, not a summary.
+            cartJson = CartSerializer.encode(cartItems, _billDiscount.value, _billNote.value),
             totalAmount = total,
             itemsCount = cartItems.size
         )
@@ -399,17 +569,29 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.holdSale(held)
             clearCart()
-            showMessage("Bill parked: ${held.label}")
+            showMessage("Bill kept aside: ${held.label}")
         }
     }
 
     fun resumeHeldSale(held: HeldSaleEntity) {
         viewModelScope.launch {
+            val restored = CartSerializer.decode(held.cartJson)
             repository.deleteHeldSale(held.id)
-            // Re-populate dummy items for demonstration
-            addQuickItemToCart("Resumed Bill Item", held.totalAmount, 1.0)
+            _cart.value = restored.items
+            _billDiscount.value = restored.billDiscount
+            _billNote.value = restored.billNote
+            _selectedCustomer.value = held.customerId?.let { id ->
+                customers.value.firstOrNull { it.id == id }
+            }
             selectTab(PosTab.SELL)
-            showMessage("Resumed ${held.label}")
+            showMessage("Bill restored: ${held.label}")
+        }
+    }
+
+    fun deleteHeldSale(heldId: Long) {
+        viewModelScope.launch {
+            repository.deleteHeldSale(heldId)
+            showMessage("Kept-aside bill removed")
         }
     }
 
@@ -432,6 +614,14 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             if (id > 0) {
                 val existing = repository.getProductById(id)
                 if (existing != null) {
+                    if (existing.sellingPrice != sellingPrice) {
+                        audit(
+                            action = "PRICE_CHANGE",
+                            description = "$name price ${CurrencyUtils.formatLkr(existing.sellingPrice)} " +
+                                "to ${CurrencyUtils.formatLkr(sellingPrice)}",
+                            amount = sellingPrice
+                        )
+                    }
                     repository.updateProduct(
                         existing.copy(
                             name = name,
@@ -458,6 +648,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     barcode = barcode,
                     sku = sku,
                     category = category,
+                    // New products join the shop type the business is set up for,
+                    // so they show up alongside the right catalogue.
+                    shopType = profile.value?.shopTypeKey.orEmpty(),
                     unit = unit,
                     currentStock = openingStock,
                     lowStockThreshold = lowStock,
@@ -465,6 +658,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     isFavourite = isFavourite
                 )
                 repository.insertProduct(newProd)
+                audit("PRODUCT_ADDED", "Added product $name", sellingPrice)
                 showMessage("Added $name")
             }
         }
@@ -705,88 +899,220 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun recordCashMovement(shiftId: Long, type: String, amount: Double, reason: String, note: String) {
         viewModelScope.launch {
             repository.recordCashMovement(shiftId, type, amount, reason, note)
-            val typeStr = if (type == "CASH_IN") "Cash in" else "Cash out"
-            showMessage("$typeStr ${CurrencyUtils.formatLkr(amount)} recorded")
+            val typeStr = if (type == "CASH_IN") "Money put in" else "Money taken out"
+            audit(action = type, description = "$typeStr: $reason", amount = amount)
+            showMessage("$typeStr: ${CurrencyUtils.formatLkr(amount)}")
         }
     }
 
     // --- Refund & Returns ---
     fun processRefund(saleId: Long, refundItems: List<SaleItemEntity>, refundAmount: Double, reason: String) {
+        if (!can(Permission.REFUND_SALE)) {
+            showMessage(permissions.value.denialMessage(Permission.REFUND_SALE))
+            return
+        }
         viewModelScope.launch {
             repository.processRefund(saleId, refundItems, refundAmount, reason)
-            showMessage("Refund of ${CurrencyUtils.formatLkr(refundAmount)} completed. Stock restocked.")
+            audit(
+                action = "REFUND",
+                description = "Refunded ${refundItems.size} item(s): ${reason.ifBlank { "no reason given" }}",
+                amount = refundAmount
+            )
+            showMessage("Money returned: ${CurrencyUtils.formatLkr(refundAmount)}. Stock put back.")
         }
     }
 
-    // --- Staff switch & Setup ---
+    // --- Staff & roles ---
     fun switchActiveStaff(staff: StaffEntity) {
         viewModelScope.launch {
-            val current = profile.value ?: BusinessProfileEntity()
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
             repository.saveProfile(
                 current.copy(
                     activeStaffId = staff.id,
-                    activeStaffName = "${staff.name} (${staff.role})"
+                    activeStaffName = staff.name,
+                    activeStaffRole = staff.role
                 )
             )
-            showMessage("Logged in as ${staff.name}")
+            _signedInStaffId.value = staff.id
+            audit("STAFF_SWITCH", "Now serving as ${staff.name} (${staff.role})")
+            showMessage("Now serving as ${staff.name}")
         }
     }
 
-    // --- Hardware Printer Service ---
-    val bluetoothPrinterService = BluetoothPrinterService(application)
-    val printerConnectionState = bluetoothPrinterService.connectionState
-    val pairedBluetoothPrinters = bluetoothPrinterService.pairedPrinters
-
-    fun refreshBluetoothPrinters() {
-        bluetoothPrinterService.refreshPairedDevices()
-    }
-
-    fun connectBluetoothPrinter(address: String, name: String) {
+    fun saveStaff(id: Long, name: String, phone: String, role: String, pin: String, isActive: Boolean) {
+        if (!can(Permission.MANAGE_STAFF)) {
+            showMessage(permissions.value.denialMessage(Permission.MANAGE_STAFF))
+            return
+        }
         viewModelScope.launch {
-            val success = bluetoothPrinterService.connectToPrinter(address, name)
-            if (success) {
-                val current = profile.value ?: BusinessProfileEntity()
-                repository.saveProfile(current.copy(printerName = name, printerConnected = true))
-                showMessage("Connected to $name")
+            if (id > 0) {
+                val existing = staffList.value.firstOrNull { it.id == id } ?: return@launch
+                repository.updateStaff(
+                    existing.copy(
+                        name = name,
+                        phone = phone,
+                        role = role,
+                        pin = pin.ifBlank { existing.pin },
+                        isActive = isActive
+                    )
+                )
+                audit("STAFF_UPDATED", "Updated $name ($role)")
+                showMessage("$name updated")
             } else {
-                showMessage("Could not connect to $name")
+                repository.insertStaff(
+                    StaffEntity(
+                        name = name,
+                        phone = phone,
+                        role = role,
+                        pin = pin,
+                        isActive = isActive
+                    )
+                )
+                audit("STAFF_ADDED", "Added $name as $role")
+                showMessage("$name added to your team")
             }
         }
     }
 
-    fun disconnectBluetoothPrinter() {
-        bluetoothPrinterService.disconnect()
+    fun setStaffActive(staff: StaffEntity, active: Boolean) {
+        if (!can(Permission.MANAGE_STAFF)) {
+            showMessage(permissions.value.denialMessage(Permission.MANAGE_STAFF))
+            return
+        }
         viewModelScope.launch {
-            val current = profile.value ?: BusinessProfileEntity()
+            repository.updateStaff(staff.copy(isActive = active))
+            audit("STAFF_UPDATED", "${if (active) "Enabled" else "Paused"} ${staff.name}")
+            showMessage(if (active) "${staff.name} can sign in again" else "${staff.name} paused")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Printer (real Bluetooth + Wi-Fi)
+    // ------------------------------------------------------------------
+
+    val printerStatus: StateFlow<PrinterStatus> = printerService.status
+    val bluetoothPrinters: StateFlow<List<PrinterDevice>> = printerService.bluetoothPrinters
+    val wifiPrinters: StateFlow<List<PrinterDevice>> = printerService.wifiPrinters
+    val isScanningPrinters: StateFlow<Boolean> = printerService.isScanning
+
+    /** Convenience flag for badges: is a printer actually connected right now. */
+    val isPrinterConnected: StateFlow<Boolean> = printerService.status
+        .map { it is PrinterStatus.Connected || it is PrinterStatus.Printing }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun hasBluetoothPermission(): Boolean = printerService.hasBluetoothPermission()
+
+    fun bluetoothPermissions(): Array<String> = printerService.requiredBluetoothPermissions
+
+    fun refreshBluetoothPrinters() {
+        val problem = printerService.refreshBluetoothPrinters()
+        if (problem != null) showMessage(problem)
+    }
+
+    fun scanWifiPrinters(port: Int = 9100) {
+        viewModelScope.launch {
+            showMessage("Looking for printers on your Wi-Fi…")
+            val problem = printerService.scanWifiPrinters(port)
+            showMessage(problem ?: "Found ${printerService.wifiPrinters.value.size} Wi-Fi printer(s)")
+        }
+    }
+
+    fun connectPrinter(device: PrinterDevice) {
+        viewModelScope.launch {
+            val problem = printerService.connect(device)
+            if (problem == null) {
+                val current = repository.getProfileSync() ?: BusinessProfileEntity()
+                repository.saveProfile(
+                    current.copy(
+                        printerName = device.name,
+                        printerAddress = device.address,
+                        printerConnectionType = device.transport.name,
+                        printerPort = device.port,
+                        printerConnected = true
+                    )
+                )
+                audit("PRINTER", "Connected printer ${device.name} over ${device.transport.label}")
+                showMessage("Connected to ${device.name}")
+            } else {
+                showMessage(problem)
+            }
+        }
+    }
+
+    /** Adds a Wi-Fi printer the user typed in by hand. */
+    fun connectWifiPrinterManually(ip: String, port: Int, name: String) {
+        viewModelScope.launch {
+            if (ip.isBlank()) {
+                showMessage("Enter the printer's IP address first")
+                return@launch
+            }
+            val reachable = printerService.checkWifiPrinter(ip, port)
+            if (!reachable) {
+                showMessage("No printer answered at $ip:$port. Check the address and Wi-Fi.")
+                return@launch
+            }
+            connectPrinter(
+                PrinterDevice(
+                    name = name.ifBlank { "Printer at $ip" },
+                    address = ip,
+                    transport = PrinterTransport.WIFI,
+                    port = port
+                )
+            )
+        }
+    }
+
+    fun disconnectPrinter() {
+        printerService.disconnect()
+        viewModelScope.launch {
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
             repository.saveProfile(current.copy(printerConnected = false))
             showMessage("Printer disconnected")
         }
     }
 
-    fun printTestReceipt(paperWidth: String = "58mm") {
+    fun forgetPrinter() {
+        printerService.disconnect()
         viewModelScope.launch {
-            val p = profile.value ?: BusinessProfileEntity()
-            val ok = bluetoothPrinterService.printTestReceipt(
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
+            repository.saveProfile(
+                current.copy(
+                    printerName = "",
+                    printerAddress = "",
+                    printerConnectionType = "NONE",
+                    printerConnected = false
+                )
+            )
+            showMessage("Printer removed")
+        }
+    }
+
+    fun printTestReceipt(paperWidth: String? = null) {
+        viewModelScope.launch {
+            val p = repository.getProfileSync() ?: BusinessProfileEntity()
+            val problem = printerService.printTestPage(
                 storeName = p.name,
                 phone = p.phone,
                 address = p.address,
-                paperWidth = paperWidth
+                paperWidth = paperWidth ?: p.printerPaperWidth
             )
-            if (ok) showMessage("Test receipt sent to printer") else showMessage("Printing failed")
+            showMessage(problem ?: "Test page sent to the printer")
         }
     }
 
     fun printBillReceipt(sale: SaleEntity, items: List<SaleItemEntity>) {
         viewModelScope.launch {
-            val p = profile.value ?: BusinessProfileEntity()
-            val ok = bluetoothPrinterService.printBillReceipt(
+            val p = repository.getProfileSync() ?: BusinessProfileEntity()
+            val problem = printerService.printReceipt(
                 storeName = p.name,
                 phone = p.phone,
                 address = p.address,
                 invoiceNo = sale.invoiceNumber,
                 cashier = sale.cashierName,
                 customerName = sale.customerName,
-                items = items.map { Triple(it.productName, it.quantity, it.lineTotal) },
+                items = items.map {
+                    PrinterService.ReceiptLine(it.productName, it.quantity, it.lineTotal)
+                },
                 subtotal = sale.subtotal,
                 discount = sale.discountAmount,
                 tax = sale.taxAmount,
@@ -798,20 +1124,56 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 currencySymbol = p.currencySymbol,
                 paperWidth = p.printerPaperWidth
             )
-            if (ok) showMessage("Receipt printed successfully") else showMessage("Printer error")
+            showMessage(problem ?: "Receipt printed")
         }
     }
 
-    // --- Product Catalog Preloading by Shop Type ---
-    fun preloadProductsForShopType(shopTypeKey: String, replaceExisting: Boolean = false) {
+    override fun onCleared() {
+        super.onCleared()
+        printerService.disconnect()
+    }
+
+    // ------------------------------------------------------------------
+    // Shop type catalogue
+    // ------------------------------------------------------------------
+
+    /**
+     * Installs the 50 starter items for [shopTypeKey] and removes anything
+     * belonging to a different shop type, so categories can never overlap.
+     */
+    fun installShopCatalog(shopTypeKey: String) {
         viewModelScope.launch {
-            val presetProducts = ProductCatalogPresets.getProductsForShopKey(shopTypeKey)
-            if (replaceExisting) {
-                repository.clearAndPreloadProducts(presetProducts)
+            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
+            repository.installShopTypeCatalog(preset.key, preset.products)
+            audit("CATALOG", "Loaded starter items for ${preset.displayName}")
+            showMessage("${preset.products.size} ${preset.displayName} items are ready")
+        }
+    }
+
+    /** Removes starter items without touching anything the owner added. */
+    fun clearStarterCatalog() {
+        viewModelScope.launch {
+            repository.clearAllProducts()
+            audit("CATALOG", "Cleared the product list")
+            showMessage("Product list cleared")
+        }
+    }
+
+    /** Switching shop type wipes the old catalogue so nothing overlaps. */
+    fun changeShopType(shopTypeKey: String, loadStarterItems: Boolean) {
+        viewModelScope.launch {
+            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
+            repository.saveProfile(
+                current.copy(shopTypeKey = preset.key, businessType = preset.businessType)
+            )
+            if (loadStarterItems) {
+                repository.installShopTypeCatalog(preset.key, preset.products)
             } else {
-                repository.insertProducts(presetProducts)
+                repository.pruneProductsOutsideShopType(preset.key)
             }
-            showMessage("Loaded ${presetProducts.size} common items for your shop type")
+            audit("CATALOG", "Switched shop type to ${preset.displayName}")
+            showMessage("Now set up for ${preset.displayName}")
         }
     }
 
@@ -836,7 +1198,81 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun saveBusinessProfile(updated: BusinessProfileEntity) {
         viewModelScope.launch {
             repository.saveProfile(updated)
-            showMessage("Business profile saved")
+            audit("SETTINGS", "Business details updated")
+            showMessage("Saved")
+        }
+    }
+
+    /**
+     * Called at the end of the setup wizard. Writes the profile, installs the
+     * chosen shop type's starter items and creates the owner's staff record.
+     */
+    fun finishSetup(
+        profileToSave: BusinessProfileEntity,
+        shopTypeKey: String,
+        loadStarterItems: Boolean,
+        ownerName: String,
+        ownerPin: String
+    ) {
+        viewModelScope.launch {
+            val preset = ProductCatalogPresets.findShopType(shopTypeKey)
+
+            var ownerId = 0L
+            if (profileToSave.staffEnabled && ownerName.isNotBlank()) {
+                val existingOwner = staffList.value.firstOrNull {
+                    it.name.equals(ownerName, ignoreCase = true)
+                }
+                ownerId = existingOwner?.id ?: repository.insertStaff(
+                    StaffEntity(
+                        name = ownerName,
+                        role = "Owner",
+                        pin = ownerPin,
+                        isActive = true
+                    )
+                )
+                _signedInStaffId.value = ownerId
+            }
+
+            repository.saveProfile(
+                profileToSave.copy(
+                    id = 1,
+                    shopTypeKey = preset?.key.orEmpty(),
+                    businessType = preset?.businessType ?: profileToSave.businessType,
+                    activeStaffId = ownerId,
+                    activeStaffName = ownerName.ifBlank { profileToSave.name },
+                    activeStaffRole = "Owner",
+                    requirePinOnOpen = profileToSave.staffEnabled && ownerPin.isNotBlank(),
+                    isConfigured = true
+                )
+            )
+
+            if (loadStarterItems && preset != null) {
+                repository.installShopTypeCatalog(preset.key, preset.products)
+            } else if (preset != null) {
+                repository.pruneProductsOutsideShopType(preset.key)
+            }
+
+            _onboardingStep.value = 0
+            audit("SETUP", "Setup finished for ${profileToSave.name}")
+            showMessage("You're all set. Start selling!")
+        }
+    }
+
+    /** Restarts the setup wizard from the settings screen. */
+    fun restartSetup() {
+        _onboardingStep.value = 1
+    }
+
+    /** Looks up a scanned or typed barcode inside the active shop's catalogue. */
+    fun addProductByBarcode(barcode: String, onMissing: (String) -> Unit) {
+        viewModelScope.launch {
+            val shopType = profile.value?.shopTypeKey.orEmpty()
+            val match = repository.getProductByBarcode(barcode.trim(), shopType)
+            if (match != null) {
+                addToCart(match)
+            } else {
+                onMissing(barcode.trim())
+            }
         }
     }
 }

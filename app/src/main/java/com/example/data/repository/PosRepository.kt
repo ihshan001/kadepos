@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import com.example.data.db.PosDao
+import com.example.data.model.AuditLogEntity
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
@@ -17,13 +18,26 @@ import com.example.data.model.StaffEntity
 import com.example.data.model.StockMovementEntity
 import com.example.data.model.SupplierEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PosRepository(private val dao: PosDao) {
 
     val businessProfile: Flow<BusinessProfileEntity?> = dao.getProfile()
-    val allProducts: Flow<List<ProductEntity>> = dao.getAllProducts()
-    val lowStockProducts: Flow<List<ProductEntity>> = dao.getLowStockProducts()
-    val outOfStockProducts: Flow<List<ProductEntity>> = dao.getOutOfStockProducts()
+
+    /** The shop type chosen during setup drives every product query. */
+    private val activeShopType: Flow<String> =
+        businessProfile.map { it?.shopTypeKey.orEmpty() }
+
+    val allProducts: Flow<List<ProductEntity>> =
+        activeShopType.flatMapLatest { dao.getProductsForShopType(it) }
+    val lowStockProducts: Flow<List<ProductEntity>> =
+        activeShopType.flatMapLatest { dao.getLowStockProducts(it) }
+    val outOfStockProducts: Flow<List<ProductEntity>> =
+        activeShopType.flatMapLatest { dao.getOutOfStockProducts(it) }
+    val auditLog: Flow<List<AuditLogEntity>> = dao.getAuditLog()
     val allSales: Flow<List<SaleEntity>> = dao.getAllSales()
     val allCustomers: Flow<List<CustomerEntity>> = dao.getAllCustomers()
     val customersWithCredit: Flow<List<CustomerEntity>> = dao.getCustomersWithCredit()
@@ -44,11 +58,29 @@ class PosRepository(private val dao: PosDao) {
     suspend fun archiveProduct(id: Long) = dao.archiveProduct(id)
     suspend fun deleteProduct(id: Long) = dao.deleteProduct(id)
     suspend fun insertProducts(products: List<ProductEntity>) = dao.insertProducts(products)
-    suspend fun clearAndPreloadProducts(products: List<ProductEntity>) {
-        dao.clearAllProducts()
-        dao.insertProducts(products)
+
+    /**
+     * Replaces the catalogue with the starter items for [shopType].
+     * Everything belonging to another shop type is removed first so the two
+     * catalogues can never mix, and nothing is inserted twice.
+     */
+    suspend fun installShopTypeCatalog(shopType: String, products: List<ProductEntity>) {
+        dao.deleteProductsOutsideShopType(shopType)
+        if (dao.countProductsForShopType(shopType) == 0) {
+            dao.insertProducts(products)
+        }
     }
-    suspend fun getProductByBarcode(barcode: String) = dao.getProductByBarcode(barcode)
+
+    /** Drops every product from other shop types when the owner switches type. */
+    suspend fun pruneProductsOutsideShopType(shopType: String) =
+        dao.deleteProductsOutsideShopType(shopType)
+
+    suspend fun countProductsForShopType(shopType: String) = dao.countProductsForShopType(shopType)
+
+    suspend fun clearAllProducts() = dao.clearAllProducts()
+
+    suspend fun getProductByBarcode(barcode: String, shopType: String) =
+        dao.getProductByBarcode(barcode, shopType)
     suspend fun getProductById(id: Long) = dao.getProductById(id)
 
     suspend fun insertCustomer(customer: CustomerEntity) = dao.insertCustomer(customer)
@@ -384,6 +416,26 @@ class PosRepository(private val dao: PosDao) {
                 )
             }
         }
+    }
+
+    suspend fun recordAudit(
+        staffId: Long,
+        staffName: String,
+        action: String,
+        description: String,
+        amount: Double = 0.0,
+        reference: String = ""
+    ) {
+        dao.insertAuditLog(
+            AuditLogEntity(
+                staffId = staffId,
+                staffName = staffName,
+                action = action,
+                description = description,
+                amount = amount,
+                reference = reference
+            )
+        )
     }
 
     suspend fun holdSale(heldSale: HeldSaleEntity) = dao.insertHeldSale(heldSale)

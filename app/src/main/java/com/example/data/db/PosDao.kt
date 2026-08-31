@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.example.data.model.AuditLogEntity
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
@@ -37,20 +38,42 @@ interface PosDao {
     suspend fun saveProfile(profile: BusinessProfileEntity)
 
     // --- Products ---
-    @Query("SELECT * FROM products WHERE isArchived = 0 ORDER BY isFavourite DESC, name ASC")
-    fun getAllProducts(): Flow<List<ProductEntity>>
+    // Every product read is scoped to the active shop type so a grocery never
+    // sees pharmacy items and vice-versa. Products saved before a shop type
+    // existed (shopType = "") stay visible to their owner.
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND (shopType = :shopType OR shopType = '') " +
+            "ORDER BY isFavourite DESC, name ASC"
+    )
+    fun getProductsForShopType(shopType: String): Flow<List<ProductEntity>>
 
-    @Query("SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 AND currentStock <= lowStockThreshold ORDER BY currentStock ASC")
-    fun getLowStockProducts(): Flow<List<ProductEntity>>
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 " +
+            "AND (shopType = :shopType OR shopType = '') AND currentStock <= lowStockThreshold " +
+            "ORDER BY currentStock ASC"
+    )
+    fun getLowStockProducts(shopType: String): Flow<List<ProductEntity>>
 
-    @Query("SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 AND currentStock <= 0")
-    fun getOutOfStockProducts(): Flow<List<ProductEntity>>
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 " +
+            "AND (shopType = :shopType OR shopType = '') AND currentStock <= 0"
+    )
+    fun getOutOfStockProducts(shopType: String): Flow<List<ProductEntity>>
+
+    @Query("SELECT COUNT(*) FROM products WHERE shopType = :shopType")
+    suspend fun countProductsForShopType(shopType: String): Int
+
+    @Query("DELETE FROM products WHERE shopType != :shopType AND shopType != ''")
+    suspend fun deleteProductsOutsideShopType(shopType: String)
 
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun getProductById(id: Long): ProductEntity?
 
-    @Query("SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 LIMIT 1")
-    suspend fun getProductByBarcode(barcode: String): ProductEntity?
+    @Query(
+        "SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 " +
+            "AND (shopType = :shopType OR shopType = '') LIMIT 1"
+    )
+    suspend fun getProductByBarcode(barcode: String, shopType: String): ProductEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProduct(product: ProductEntity): Long
@@ -229,6 +252,13 @@ interface PosDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCashMovement(movement: CashMovementEntity): Long
+
+    // --- Audit Log ---
+    @Query("SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 300")
+    fun getAuditLog(): Flow<List<AuditLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAuditLog(entry: AuditLogEntity): Long
 
     // --- Held Sales ---
     @Query("SELECT * FROM held_sales ORDER BY timestamp DESC")

@@ -363,7 +363,7 @@ fun ActionCenterScreen(
                             } else if (item.targetCustomer != null) {
                                 // Launch WhatsApp reminder
                                 val cust = item.targetCustomer
-                                val msg = "Hi ${cust.name}, your outstanding balance at ${profile?.name ?: "ABC Stores"} is ${CurrencyUtils.formatLkr(cust.creditBalance)}. Thank you!"
+                                val msg = "Hi ${cust.name}, your outstanding balance at ${profile?.name.orEmpty()} is ${CurrencyUtils.formatLkr(cust.creditBalance)}. Thank you!"
                                 try {
                                     val intent = Intent(Intent.ACTION_VIEW).apply {
                                         data = Uri.parse("https://api.whatsapp.com/send?phone=${cust.phone}&text=${Uri.encode(msg)}")

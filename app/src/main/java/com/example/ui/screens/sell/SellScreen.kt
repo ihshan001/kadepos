@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,6 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -27,22 +32,28 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.BusinessProfileEntity
+import com.example.data.model.Permission
 import com.example.data.model.CustomerEntity
 import com.example.data.model.HeldSaleEntity
 import com.example.data.model.ProductEntity
 import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
 import com.example.ui.components.BatchReorderDialog
+import com.example.ui.components.HintCard
+import com.example.ui.components.HintTone
 import com.example.ui.components.LowStockRestockDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.CartItem
 import com.example.ui.viewmodel.PosViewModel
+
+/** Chip labels that are not real product categories. */
+private const val ALL_CATEGORY = "All"
+private const val FAVOURITES_CATEGORY = "Favourites"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,10 +65,10 @@ fun SellScreen(
     selectedCustomer: CustomerEntity?,
     billDiscount: Double,
     billNote: String,
-    onOpenDrawer: () -> Unit
+    onOpenMore: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("All") }
+    var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
     var showBarcodeDialog by remember { mutableStateOf(false) }
     var showQuickItemDialog by remember { mutableStateOf(false) }
     var showQuickSaleDialog by remember { mutableStateOf(false) }
@@ -68,6 +79,9 @@ fun SellScreen(
     var showCheckoutSheet by remember { mutableStateOf(false) }
     var showShiftOverviewDialog by remember { mutableStateOf(false) }
     var editingCartItemIndex by remember { mutableStateOf<Int?>(null) }
+    var unknownBarcode by remember { mutableStateOf<String?>(null) }
+
+    val permissions by viewModel.permissions.collectAsState()
 
     val lastCompletedSale by viewModel.lastCompletedSale.collectAsState()
     val lastCompletedItems by viewModel.lastCompletedItems.collectAsState()
@@ -89,11 +103,27 @@ fun SellScreen(
     val todayCreditSales = remember(todaySalesList) { todaySalesList.filter { it.paymentMethod == "CREDIT" }.sumOf { it.totalAmount } }
     val todayOrderCount = todaySalesList.size
 
+    // Categories come from the shop's own products only, so a grocery never
+    // sees pharmacy sections. Every one of them is listed — the row scrolls.
     val categories = remember(products) {
-        val list = mutableListOf("All", "⭐ Favourites")
-        val customCats = products.map { it.category.trim() }.filter { it.isNotBlank() }.distinct().sorted()
-        list.addAll(customCats)
-        list.distinct()
+        buildList {
+            add(ALL_CATEGORY)
+            if (products.any { it.isFavourite }) add(FAVOURITES_CATEGORY)
+            addAll(
+                products.map { it.category.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+            )
+        }
+    }
+
+    val categoryListState = rememberLazyListState()
+
+    // If the chosen category disappears (shop type changed, product deleted),
+    // quietly fall back to All rather than showing an empty grid.
+    LaunchedEffect(categories) {
+        if (selectedCategory !in categories) selectedCategory = ALL_CATEGORY
     }
 
     val filteredProducts = remember(products, searchQuery, selectedCategory) {
@@ -106,11 +136,9 @@ fun SellScreen(
             }
         } else {
             when (selectedCategory) {
-                "All" -> products
-                "⭐ Favourites" -> {
-                    val favs = products.filter { it.isFavourite }
-                    if (favs.isNotEmpty()) favs else products
-                }
+                ALL_CATEGORY -> products
+                FAVOURITES_CATEGORY -> products.filter { it.isFavourite }
+                // Strict match: a category shows its own items and nothing else.
                 else -> products.filter { it.category.equals(selectedCategory, ignoreCase = true) }
             }
         }
@@ -125,7 +153,7 @@ fun SellScreen(
                 title = {
                     Column {
                         Text(
-                            text = profile?.name ?: "ABC Stores",
+                            text = profile?.name.orEmpty(),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = TextPrimary,
                             maxLines = 1,
@@ -208,7 +236,7 @@ fun SellScreen(
                     }
 
                     IconButton(
-                        onClick = onOpenDrawer,
+                        onClick = onOpenMore,
                         modifier = Modifier.testTag("menu_button")
                     ) {
                         Icon(Icons.Default.Menu, contentDescription = "Menu", tint = TextPrimary)
@@ -360,30 +388,46 @@ fun SellScreen(
                     }
                 }
 
-                // 3. Category Carousel Chips
+                // 3. Category chips.
+                // A LazyRow, not a Row: every category the shop actually has is
+                // reachable by swiping sideways, so the last chip is never cut
+                // off or wrapped onto a second line.
                 item {
-                    Row(
+                    LazyRow(
+                        state = categoryListState,
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(end = 4.dp)
                     ) {
-                        categories.take(6).forEach { cat ->
+                        items(categories, key = { it }) { cat ->
                             val isSelected = selectedCategory == cat
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
                                 color = if (isSelected) BrandTealPrimary else LightSurface,
                                 border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
-                                modifier = Modifier.clickable {
-                                    selectedCategory = cat
-                                    searchQuery = ""
-                                }
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clickable {
+                                        selectedCategory = cat
+                                        searchQuery = ""
+                                    }
                             ) {
-                                Text(
-                                    text = cat,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else TextPrimary,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 14.dp)
+                                ) {
+                                    Text(
+                                        text = cat,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Visible,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else TextPrimary
+                                    )
+                                }
                             }
                         }
                     }
@@ -608,14 +652,13 @@ fun SellScreen(
     }
 
     if (showBarcodeDialog) {
-        BarcodeScannerSimulatorDialog(
-            products = products,
-            onBarcodeScanned = { barcode ->
-                val matched = products.find { it.barcode == barcode }
-                if (matched != null) {
-                    viewModel.addToCart(matched)
-                } else {
-                    viewModel.addQuickItemToCart("Scanned Item ($barcode)", 250.0)
+        BarcodeEntryDialog(
+            onBarcodeEntered = { barcode ->
+                // Looks the code up in this shop's own catalogue. If it isn't
+                // there we open Quick Item pre-filled instead of inventing a price.
+                viewModel.addProductByBarcode(barcode) { missing ->
+                    unknownBarcode = missing
+                    showQuickItemDialog = true
                 }
                 showBarcodeDialog = false
             },
@@ -625,6 +668,7 @@ fun SellScreen(
 
     if (showQuickItemDialog) {
         QuickItemDialog(
+            prefillBarcode = unknownBarcode,
             onAdd = { name, price, qty, disc, savePermanent ->
                 viewModel.addQuickItemToCart(name, price, qty, disc)
                 if (savePermanent) {
@@ -632,20 +676,24 @@ fun SellScreen(
                         id = 0,
                         name = name,
                         sellingPrice = price,
-                        costPrice = price * 0.75,
-                        barcode = "",
+                        costPrice = 0.0,
+                        barcode = unknownBarcode.orEmpty(),
                         sku = "",
-                        category = "Quick Items",
+                        category = "Other",
                         unit = "Piece",
-                        openingStock = 100.0,
-                        lowStock = 5.0,
+                        openingStock = 0.0,
+                        lowStock = 0.0,
                         isTracked = false,
                         isFavourite = true
                     )
                 }
+                unknownBarcode = null
                 showQuickItemDialog = false
             },
-            onDismiss = { showQuickItemDialog = false }
+            onDismiss = {
+                unknownBarcode = null
+                showQuickItemDialog = false
+            }
         )
     }
 
@@ -668,7 +716,7 @@ fun SellScreen(
                 showCustomerPicker = false
             },
             onAddNew = { name, phone ->
-                viewModel.saveCustomer(0, name, phone, "", "", 25000.0, "")
+                viewModel.saveCustomer(0, name, phone, "", "", 0.0, "")
                 showCustomerPicker = false
             },
             onDismiss = { showCustomerPicker = false }
@@ -1191,12 +1239,17 @@ fun CartItemRow(
 // Barcode Scanner Simulator Dialog
 // -------------------------------------------------------------------------------------
 @Composable
-fun BarcodeScannerSimulatorDialog(
-    products: List<ProductEntity>,
-    onBarcodeScanned: (String) -> Unit,
+fun BarcodeEntryDialog(
+    onBarcodeEntered: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var manualBarcode by remember { mutableStateOf("") }
+    var barcode by remember { mutableStateOf("") }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+
+    // Most shops use a cheap USB or Bluetooth scanner, which behaves exactly
+    // like a keyboard and ends with Enter. Keeping this field focused means the
+    // cashier can just scan, with no tapping at all.
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1204,84 +1257,64 @@ fun BarcodeScannerSimulatorDialog(
             colors = CardDefaults.cardColors(containerColor = LightSurface),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("BARCODE SCANNER", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Scan barcode", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Camera viewfinder viewfinder visual
-                Box(
-                    modifier = Modifier
-                        .size(180.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF0F172A)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = BrandTealLight,
-                        modifier = Modifier.size(80.dp)
-                    )
-                    Text(
-                        "Point at barcode",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 11.sp,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
-                    )
-                }
+                Text(
+                    "Scan with your barcode reader, or type the number.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Tap quick sample barcode to scan:", fontSize = 12.sp, color = TextSecondary)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(
-                        onClick = { onBarcodeScanned("4791234567890") },
-                        label = { Text("Coke 500ml") }
-                    )
-                    AssistChip(
-                        onClick = { onBarcodeScanned("4791112223334") },
-                        label = { Text("Prima Bread") }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
-                    value = manualBarcode,
-                    onValueChange = { manualBarcode = it },
-                    placeholder = { Text("Enter barcode manually") },
+                    value = barcode,
+                    onValueChange = { input ->
+                        val cleaned = input.filter { it.isLetterOrDigit() }
+                        barcode = cleaned
+                    },
+                    label = { Text("Barcode") },
+                    leadingIcon = {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BrandTealPrimary)
+                    },
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .testTag("barcode_input"),
+                    textStyle = TextStyle(color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onDone = { if (barcode.isNotBlank()) onBarcodeEntered(barcode) }
+                    ),
                     singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = {
-                        if (manualBarcode.isNotBlank()) onBarcodeScanned(manualBarcode)
-                    },
-                    enabled = manualBarcode.isNotBlank(),
+                    onClick = { if (barcode.isNotBlank()) onBarcodeEntered(barcode) },
+                    enabled = barcode.isNotBlank(),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
                 ) {
-                    Text("Add Scanned Item", fontWeight = FontWeight.Bold)
+                    Text("Find item", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1293,6 +1326,7 @@ fun BarcodeScannerSimulatorDialog(
 // -------------------------------------------------------------------------------------
 @Composable
 fun QuickItemDialog(
+    prefillBarcode: String? = null,
     onAdd: (name: String, price: Double, qty: Double, discount: Double, saveProduct: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1319,14 +1353,22 @@ fun QuickItemDialog(
                     }
                 }
 
-                Text("What are you selling?", fontSize = 13.sp, color = TextSecondary)
+                if (prefillBarcode != null) {
+                    Text(
+                        "Barcode $prefillBarcode is not in your items yet. Add it here.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                } else {
+                    Text("What are you selling?", fontSize = 13.sp, color = TextSecondary)
+                }
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Item Name / Description") },
-                    placeholder = { Text("e.g. Electrical Wire / Repair") },
+                    placeholder = { Text("Item name") },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Medium),
@@ -1343,7 +1385,6 @@ fun QuickItemDialog(
                     value = priceText,
                     onValueChange = { priceText = it },
                     label = { Text("Price (Rs.)") },
-                    placeholder = { Text("450") },
                     leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp), color = Color.Black) },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
@@ -1382,7 +1423,7 @@ fun QuickItemDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(checked = saveAsPermanent, onCheckedChange = { saveAsPermanent = it })
-                    Text("Save as permanent product", fontSize = 13.sp)
+                    Text("Also save to my items", fontSize = 13.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
