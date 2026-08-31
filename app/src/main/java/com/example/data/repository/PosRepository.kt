@@ -125,6 +125,8 @@ class PosRepository(private val dao: PosDao) {
 
     suspend fun getAllProductsSync() = dao.getAllProductsSync()
 
+    suspend fun getProductByBarcode(barcode: String, shopType: String) =
+        dao.getProductByBarcode(barcode, shopType)
     suspend fun getProductById(id: Long) = dao.getProductById(id)
     suspend fun getCustomerById(id: Long) = dao.getCustomerById(id)
     suspend fun getCurrentShiftSync() = dao.getCurrentShiftSync()

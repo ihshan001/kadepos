@@ -1035,7 +1035,7 @@ fun ProductEditDialog(
                     }
                 }
 
-                // 3. Product code / EAN (manual catalogue field; there is no scanner)
+                // 3. Product code / EAN (manual catalogue field; the sell screen can scan codes)
                 item {
                     OutlinedTextField(
                         value = barcode,

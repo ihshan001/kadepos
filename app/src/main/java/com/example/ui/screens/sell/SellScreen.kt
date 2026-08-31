@@ -1,5 +1,6 @@
 package com.example.ui.screens.sell
 
+import android.Manifest
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -29,7 +30,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -116,8 +133,11 @@ fun SellScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
+    var showBarcodeDialog by remember { mutableStateOf(false) }
+    var showCameraScannerDialog by remember { mutableStateOf(false) }
     var showQuickSaleDialog by remember { mutableStateOf(false) }
     var quickPrefillName by remember { mutableStateOf("") }
+    var quickPrefillBarcode by remember { mutableStateOf<String?>(null) }
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showHoldDialog by remember { mutableStateOf(false) }
@@ -125,6 +145,7 @@ fun SellScreen(
     var showCheckoutSheet by remember { mutableStateOf(false) }
     var showShiftOverviewDialog by remember { mutableStateOf(false) }
     var editingCartItemIndex by remember { mutableStateOf<Int?>(null) }
+    var unknownBarcode by remember { mutableStateOf<String?>(null) }
     var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
 
     val permissions by viewModel.permissions.collectAsState()
@@ -184,13 +205,12 @@ fun SellScreen(
 
     val filteredProducts = remember(products, searchQuery, selectedCategory) {
         val base = catalogParentRows(products)
-        val matches: (ProductEntity) -> Boolean = { p ->
+        fun matches(p: ProductEntity): Boolean =
             p.name.contains(searchQuery, ignoreCase = true) ||
                 p.barcode.contains(searchQuery, ignoreCase = true) ||
                 p.sku.contains(searchQuery, ignoreCase = true) ||
                 p.category.contains(searchQuery, ignoreCase = true) ||
                 p.subCategory.contains(searchQuery, ignoreCase = true)
-        }
 
         if (searchQuery.isNotBlank()) {
             // A typed option like "Basmati" should surface the Rice parent so
@@ -304,7 +324,7 @@ fun SellScreen(
                     }
 
                     IconButton(
-                        onClick = { quickPrefillName = ""; showQuickSaleDialog = true },
+                        onClick = { quickPrefillName = ""; quickPrefillBarcode = null; showQuickSaleDialog = true },
                         modifier = Modifier.testTag("quick_sale_icon_button")
                     ) {
                         Icon(Icons.Default.FlashOn, contentDescription = "Quick Add", tint = BrandGoldPrimary)
@@ -335,7 +355,7 @@ fun SellScreen(
                 contentPadding = PaddingValues(horizontal = SCREEN_PADDING, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // 1. Search Bar with Clear Button
+                // 1. Search Bar with Barcode Scanner & Clear Buttons
                 item {
                     OutlinedTextField(
                         value = searchQuery,
@@ -343,12 +363,20 @@ fun SellScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("search_product_input"),
-                        placeholder = { Text("Search products, SKU or name", fontSize = 13.sp) },
+                        placeholder = { Text("Search products, SKU, barcode...", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp)) },
                         trailingIcon = {
-                            if (searchQuery.isNotBlank()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (searchQuery.isNotBlank()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { showBarcodeDialog = true },
+                                    modifier = Modifier.testTag("barcode_scanner_button")
+                                ) {
+                                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Barcode Scan", tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
                                 }
                             }
                         },
@@ -378,6 +406,7 @@ fun SellScreen(
                                 .weight(1f)
                                 .clickable {
                                     quickPrefillName = ""
+                                    quickPrefillBarcode = null
                                     showQuickSaleDialog = true
                                 }
                         ) {
@@ -516,7 +545,7 @@ fun SellScreen(
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = "It is not in your catalogue yet. Search the name exactly, or add it as a new item and categorise it later.",
+                                    text = "It is not in your catalogue yet. Add it as a new item and categorise it later.",
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
@@ -525,6 +554,7 @@ fun SellScreen(
                                 Button(
                                     onClick = {
                                         quickPrefillName = searchQuery
+                                        quickPrefillBarcode = null
                                         showQuickSaleDialog = true
                                     },
                                     shape = RoundedCornerShape(10.dp),
@@ -630,7 +660,7 @@ fun SellScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text("Cart is empty", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
-                                    Text("Tap any product above, search the catalogue, or use Quick Add to sell.", fontSize = 11.sp, color = TextSecondary)
+                                    Text("Tap any product above, scan barcode, or use Quick Add to sell.", fontSize = 11.sp, color = TextSecondary)
                                 }
                             }
                         }
@@ -746,6 +776,66 @@ fun SellScreen(
         )
     }
 
+    if (showBarcodeDialog) {
+        BarcodeEntryDialog(
+            onBarcodeEntered = { barcode ->
+                // Looks the code up in this shop's own catalogue. If it isn't
+                // there we open Quick Add pre-filled instead of inventing a price.
+                viewModel.addProductByBarcode(
+                    barcode,
+                    onFound = { found ->
+                        if (hasVariantOptions(products, found)) {
+                            variantPickerProduct = found
+                        } else {
+                            viewModel.addToCart(found)
+                        }
+                    },
+                    onMissing = { missing ->
+                        unknownBarcode = missing
+                        quickPrefillBarcode = missing
+                        quickPrefillName = ""
+                        showQuickSaleDialog = true
+                    }
+                )
+                showBarcodeDialog = false
+            },
+            onOpenCamera = {
+                showBarcodeDialog = false
+                showCameraScannerDialog = true
+            },
+            onDismiss = { showBarcodeDialog = false }
+        )
+    }
+
+    if (showCameraScannerDialog) {
+        CameraScannerDialog(
+            onCodeScanned = { code ->
+                viewModel.addProductByBarcode(
+                    code,
+                    onFound = { found ->
+                        if (hasVariantOptions(products, found)) {
+                            variantPickerProduct = found
+                        } else {
+                            viewModel.addToCart(found)
+                        }
+                    },
+                    onMissing = { missing ->
+                        unknownBarcode = missing
+                        quickPrefillBarcode = missing
+                        quickPrefillName = ""
+                        showQuickSaleDialog = true
+                    }
+                )
+                showCameraScannerDialog = false
+            },
+            onUseManual = {
+                showCameraScannerDialog = false
+                showBarcodeDialog = true
+            },
+            onDismiss = { showCameraScannerDialog = false }
+        )
+    }
+
     variantPickerProduct?.let { parent ->
         VariantPickerDialog(
             parent = parent,
@@ -773,9 +863,11 @@ fun SellScreen(
     if (showQuickSaleDialog) {
         QuickSaleDialog(
             prefillName = quickPrefillName,
+            prefillBarcode = quickPrefillBarcode,
             onSell = { amount ->
                 viewModel.addQuickSaleToCart(amount)
                 quickPrefillName = ""
+                quickPrefillBarcode = null
                 showQuickSaleDialog = false
             },
             onAddItem = { name, price, qty, disc, savePermanent ->
@@ -786,7 +878,7 @@ fun SellScreen(
                         name = name,
                         sellingPrice = price,
                         costPrice = 0.0,
-                        barcode = "",
+                        barcode = quickPrefillBarcode.orEmpty(),
                         sku = "",
                         category = "Other",
                         unit = "Piece",
@@ -799,10 +891,12 @@ fun SellScreen(
                     )
                 }
                 quickPrefillName = ""
+                quickPrefillBarcode = null
                 showQuickSaleDialog = false
             },
             onDismiss = {
                 quickPrefillName = ""
+                quickPrefillBarcode = null
                 showQuickSaleDialog = false
             }
         )
@@ -1652,10 +1746,275 @@ fun CartItemRow(
 }
 
 // -------------------------------------------------------------------------------------
+// Barcode Scanner Simulator Dialog
+// -------------------------------------------------------------------------------------
+@Composable
+fun BarcodeEntryDialog(
+    onBarcodeEntered: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onOpenCamera: () -> Unit
+) {
+    var barcode by remember { mutableStateOf("") }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+
+    // Most shops use a cheap USB or Bluetooth scanner, which behaves exactly
+    // like a keyboard and ends with Enter. Keeping this field focused means the
+    // cashier can just scan, with no tapping at all.
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Scan barcode", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Text(
+                    "Scan with your barcode reader, type the number, or open the in-app camera.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                FilledTonalButton(
+                    onClick = onOpenCamera,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open camera scanner", fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = barcode,
+                    onValueChange = { input ->
+                        val cleaned = input.filter { it.isLetterOrDigit() }
+                        barcode = cleaned
+                    },
+                    label = { Text("Barcode") },
+                    leadingIcon = {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BrandGoldPrimary)
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .testTag("barcode_input"),
+                    textStyle = TextStyle(color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onDone = { if (barcode.isNotBlank()) onBarcodeEntered(barcode) }
+                    ),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { if (barcode.isNotBlank()) onBarcodeEntered(barcode) },
+                    enabled = barcode.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                ) {
+                    Text("Find item", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// In-app camera barcode + QR scanner.
+// -------------------------------------------------------------------------------------
+@androidx.camera.core.ExperimentalGetImage
+@Composable
+fun CameraScannerDialog(
+    onCodeScanned: (String) -> Unit,
+    onUseManual: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var granted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var found by remember { mutableStateOf(false) }
+
+    val scanner = remember {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
+                .build()
+        )
+    }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { result -> granted = result }
+
+    LaunchedEffect(Unit) {
+        if (!granted) launcher.launch(Manifest.permission.CAMERA)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Scan barcode / QR", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+                Text(
+                    "Point the camera at the product code. When it is found, the item goes straight onto the bill.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (!granted) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = StatusAmberBg,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Camera permission is needed to scan inside the app.",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusAmber,
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onUseManual,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Use keyboard", fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { launcher.launch(Manifest.permission.CAMERA) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Allow camera", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                    ) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx)
+                                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                                providerFuture.addListener({
+                                    val provider = providerFuture.get()
+                                    val preview = Preview.Builder().build().also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
+                                    val analysis = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+                                        .also { analyzer ->
+                                            analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                                val mediaImage = imageProxy.image
+                                                if (mediaImage != null) {
+                                                    val input = InputImage.fromMediaImage(
+                                                        mediaImage,
+                                                        imageProxy.imageInfo.rotationDegrees
+                                                    )
+                                                    scanner.process(input)
+                                                        .addOnSuccessListener { codes ->
+                                                            if (!found && codes.isNotEmpty()) {
+                                                                val raw = codes.first().rawValue.orEmpty()
+                                                                if (raw.isNotBlank()) {
+                                                                    found = true
+                                                                    onCodeScanned(raw)
+                                                                }
+                                                            }
+                                                        }
+                                                        .addOnCompleteListener { imageProxy.close() }
+                                                } else {
+                                                    imageProxy.close()
+                                                }
+                                            }
+                                        }
+                                    provider.unbindAll()
+                                    provider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                        preview,
+                                        analysis
+                                    )
+                                }, ContextCompat.getMainExecutor(ctx))
+                                previewView
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "If the scan is slow, tap Use keyboard instead.",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                    TextButton(onClick = onUseManual, modifier = Modifier.fillMaxWidth()) {
+                        Text("Use keyboard entry", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
 // Quick Item Dialog
 // -------------------------------------------------------------------------------------
 @Composable
 fun QuickItemDialog(
+    prefillBarcode: String? = null,
     onAdd: (name: String, price: Double, qty: Double, discount: Double, saveProduct: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1682,7 +2041,15 @@ fun QuickItemDialog(
                     }
                 }
 
-                Text("What are you selling?", fontSize = 13.sp, color = TextSecondary)
+                if (prefillBarcode != null) {
+                    Text(
+                        "Barcode $prefillBarcode is not in your items yet. Add it here.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                } else {
+                    Text("What are you selling?", fontSize = 13.sp, color = TextSecondary)
+                }
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
@@ -1777,6 +2144,7 @@ fun QuickItemDialog(
 @Composable
 fun QuickSaleDialog(
     prefillName: String = "",
+    prefillBarcode: String? = null,
     onSell: (Double) -> Unit,
     onAddItem: (name: String, price: Double, qty: Double, discount: Double, savePermanent: Boolean) -> Unit,
     onDismiss: () -> Unit
@@ -1786,7 +2154,7 @@ fun QuickSaleDialog(
     var priceText by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf(1.0) }
     var amountText by remember { mutableStateOf("") }
-    var saveAsPermanent by remember { mutableStateOf(prefillName.isNotBlank()) }
+    var saveAsPermanent by remember { mutableStateOf(prefillBarcode != null || prefillName.isNotBlank()) }
 
     val price = priceText.toDoubleOrNull() ?: 0.0
 
@@ -1808,7 +2176,15 @@ fun QuickSaleDialog(
                     }
                 }
 
-                Text("For a busy sale — name an item or just take a total.", fontSize = 13.sp, color = TextSecondary)
+                if (prefillBarcode != null) {
+                    Text(
+                        "Barcode $prefillBarcode is not in your items yet. Add it here and it can be saved too.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                } else {
+                    Text("For a busy sale — name an item or just take a total.", fontSize = 13.sp, color = TextSecondary)
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
