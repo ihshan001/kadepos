@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.Permission
 import com.example.data.model.BusinessProfileEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
@@ -46,6 +47,15 @@ fun SettingsConfigurationScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_SETTINGS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_SETTINGS),
+            onBack = onBack
+        )
+        return
+    }
+
     val profile by viewModel.profile.collectAsState()
     val staffList by viewModel.staffList.collectAsState()
 

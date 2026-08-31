@@ -27,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.BrandMintSurface
 import com.example.ui.theme.BrandTealPrimary
@@ -189,12 +192,13 @@ enum class HintTone { INFO, WARN, BRAND }
  */
 @Composable
 fun LockedScreenNotice(
-    what: String,
-    modifier: Modifier = Modifier
+    message: String,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -210,17 +214,25 @@ fun LockedScreenNotice(
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "$what is locked",
+            "Not available to you",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = TextPrimary,
+            textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            "Ask the owner or manager to open this for you.",
+            message,
             fontSize = 14.sp,
-            color = TextSecondary
+            color = TextSecondary,
+            textAlign = TextAlign.Center
         )
+        if (onBack != null) {
+            Spacer(modifier = Modifier.height(20.dp))
+            OutlinedButton(onClick = onBack, shape = RoundedCornerShape(12.dp)) {
+                Text("Go back")
+            }
+        }
     }
 }
 

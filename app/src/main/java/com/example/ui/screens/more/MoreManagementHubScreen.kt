@@ -324,6 +324,15 @@ fun ReportsScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.VIEW_REPORTS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.VIEW_REPORTS),
+            onBack = onBack
+        )
+        return
+    }
+
     val sales by viewModel.sales.collectAsState()
     val expenses by viewModel.expenses.collectAsState()
 
@@ -684,6 +693,15 @@ fun ExpensesScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_EXPENSES)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_EXPENSES),
+            onBack = onBack
+        )
+        return
+    }
+
     val expenses by viewModel.expenses.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -861,6 +879,15 @@ fun CashRegisterScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_CASH)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_CASH),
+            onBack = onBack
+        )
+        return
+    }
+
     val shift by viewModel.currentShift.collectAsState()
     var showCashMovementDialog by remember { mutableStateOf(false) }
     var movementType by remember { mutableStateOf("CASH_IN") }
@@ -1018,6 +1045,15 @@ fun StaffScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_STAFF)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_STAFF),
+            onBack = onBack
+        )
+        return
+    }
+
     val staffList by viewModel.staffList.collectAsState()
     val profile by viewModel.profile.collectAsState()
 

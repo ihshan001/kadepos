@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.Permission
 import com.example.data.model.ProductEntity
 import com.example.data.model.PurchaseEntity
 import com.example.data.model.PurchaseItemEntity
@@ -49,6 +50,15 @@ fun SuppliersPurchasesScreen(
     viewModel: PosViewModel,
     onBack: (() -> Unit)? = null
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_SUPPLIERS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_SUPPLIERS),
+            onBack = onBack
+        )
+        return
+    }
+
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(SupplierTab.SUPPLIERS) }
 
