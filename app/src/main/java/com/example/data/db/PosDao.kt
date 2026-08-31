@@ -76,12 +76,6 @@ interface PosDao {
     @Query("SELECT * FROM products WHERE parentProductId = :parentId AND isVariant = 1 AND isArchived = 0")
     suspend fun getVariantChildren(parentId: Long): List<ProductEntity>
 
-    @Query(
-        "SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 " +
-            "AND (shopType = :shopType OR shopType = '') LIMIT 1"
-    )
-    suspend fun getProductByBarcode(barcode: String, shopType: String): ProductEntity?
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProduct(product: ProductEntity): Long
 

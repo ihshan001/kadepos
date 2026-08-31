@@ -2048,23 +2048,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Looks up a scanned or typed barcode inside the active shop's catalogue. */
-    fun addProductByBarcode(
-        barcode: String,
-        onFound: (ProductEntity) -> Unit,
-        onMissing: (String) -> Unit
-    ) {
-        viewModelScope.launch {
-            val shopType = profile.value?.shopTypeKey.orEmpty()
-            val match = repository.getProductByBarcode(barcode.trim(), shopType)
-            if (match != null) {
-                onFound(match)
-            } else {
-                onMissing(barcode.trim())
-            }
-        }
-    }
-
     // -----------------------------------------------------------------------
     // Cloud backup / Google Drive (per-device, provider-controlled)
     // -----------------------------------------------------------------------

@@ -37,6 +37,17 @@ import com.example.ui.util.CurrencyUtils
 import com.example.data.model.Permission
 import com.example.ui.viewmodel.PosViewModel
 
+/** Parent rows only. Child variant lines are edited through the parent, so
+ * they should never appear as standalone catalogue cards. */
+private fun catalogParentRows(products: List<ProductEntity>): List<ProductEntity> =
+    products.filter { !it.isVariant }
+
+/** When a search matches a variant line, show its parent card instead. */
+private fun parentOfVariant(products: List<ProductEntity>, child: ProductEntity): ProductEntity? =
+    child.takeIf { it.isVariant }?.let { c ->
+        products.firstOrNull { !it.isVariant && it.id == c.parentProductId }
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductsScreen(
@@ -53,7 +64,10 @@ fun ProductsScreen(
     }
 
     val products by viewModel.products.collectAsState()
-    val lowStockProducts by viewModel.lowStockProducts.collectAsState()
+
+    // Child variant lines are stock lines, not separate catalogue cards. The
+    // Items grid is the catalogue, so it always starts from parent rows only.
+    val parentRows = remember(products) { catalogParentRows(products) }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") } // ALL, FAVOURITES, LOW_STOCK, OUT_OF_STOCK, or category name
@@ -61,11 +75,11 @@ fun ProductsScreen(
     var restockingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val categories = remember(products) {
+    val categories = remember(parentRows) {
         buildList {
-            addAll(products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted())
+            addAll(parentRows.map { it.category }.filter { it.isNotBlank() }.distinct().sorted())
             addAll(
-                products.filter { it.subCategory.isNotBlank() }
+                parentRows.filter { it.subCategory.isNotBlank() }
                     .map { listOf(it.category, it.subCategory).filter { it.isNotBlank() }.joinToString(" > ") }
                     .filter { it.isNotBlank() }
                     .distinct()
@@ -74,12 +88,20 @@ fun ProductsScreen(
         }
     }
 
-    val filteredProducts = remember(products, searchQuery, selectedFilter) {
-        products.filter { p ->
+    val filteredProducts = remember(products, parentRows, searchQuery, selectedFilter) {
+        val base = parentRows
+        val matches: (ProductEntity) -> Boolean = { p ->
+            p.name.contains(searchQuery, ignoreCase = true) ||
+                p.barcode.contains(searchQuery, ignoreCase = true) ||
+                p.sku.contains(searchQuery, ignoreCase = true) ||
+                p.category.contains(searchQuery, ignoreCase = true) ||
+                p.subCategory.contains(searchQuery, ignoreCase = true)
+        }
+        val matchFilter: (ProductEntity) -> Boolean = { p ->
             val fullPath = listOf(p.category, p.subCategory)
                 .filter { it.isNotBlank() }
                 .joinToString(" > ")
-            val matchFilter = when (selectedFilter) {
+            when (selectedFilter) {
                 "ALL" -> true
                 "FAVOURITES" -> p.isFavourite
                 "LOW_STOCK" -> p.isTracked && p.currentStock <= p.lowStockThreshold && p.currentStock > 0
@@ -88,23 +110,28 @@ fun ProductsScreen(
                     fullPath.equals(selectedFilter, ignoreCase = true) ||
                     fullPath.startsWith("$selectedFilter > ")
             }
+        }
 
-            val matchQuery = searchQuery.isBlank() ||
-                    p.name.contains(searchQuery, ignoreCase = true) ||
-                    p.barcode.contains(searchQuery, ignoreCase = true) ||
-                    p.sku.contains(searchQuery, ignoreCase = true) ||
-                    p.category.contains(searchQuery, ignoreCase = true) ||
-                    p.subCategory.contains(searchQuery, ignoreCase = true)
-
-            matchFilter && matchQuery
+        if (searchQuery.isNotBlank()) {
+            // If the owner types a variant option name, surface the parent so
+            // the option is reached through the normal variant picker.
+            val parentsOfMatchedVariants = products
+                .filter { it.isVariant && matches(it) }
+                .mapNotNull { parentOfVariant(products, it) }
+                .filter(matchFilter)
+            (base.filter { matchFilter(it) && matches(it) } + parentsOfMatchedVariants)
+                .distinctBy { it.id }
+                .sortedBy { it.name }
+        } else {
+            base.filter(matchFilter)
         }
     }
 
     val totalCatalogValuation = remember(products) {
         products.filter { it.isTracked && it.currentStock > 0 }.sumOf { it.costPrice * it.currentStock }
     }
-    val lowStockCount = remember(products) {
-        products.count { it.isTracked && it.currentStock <= it.lowStockThreshold }
+    val lowStockCount = remember(parentRows) {
+        parentRows.count { it.isTracked && it.currentStock <= it.lowStockThreshold }
     }
 
     Scaffold(
@@ -115,7 +142,7 @@ fun ProductsScreen(
                 title = {
                     Column {
                         Text("Product Catalog & Items", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
-                        Text("${products.size} total items registered", fontSize = 11.sp, color = TextSecondary)
+                        Text("${parentRows.size} catalogue items", fontSize = 11.sp, color = TextSecondary)
                     }
                 },
                 actions = {
@@ -189,7 +216,7 @@ fun ProductsScreen(
                             color = BrandGoldSurface
                         ) {
                             Text(
-                                "${products.count { it.isFavourite }} Pinned",
+                                "${parentRows.count { it.isFavourite }} Pinned",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BrandGoldDark,
@@ -238,7 +265,7 @@ fun ProductsScreen(
             ) {
                 item {
                     ProductFilterChip(
-                        label = "All (${products.size})",
+                        label = "All (${parentRows.size})",
                         isSelected = selectedFilter == "ALL",
                         onClick = { selectedFilter = "ALL" }
                     )
@@ -261,7 +288,7 @@ fun ProductsScreen(
                     )
                 }
                 items(categories) { cat ->
-                    val countInCat = products.count { p ->
+                    val countInCat = parentRows.count { p ->
                         val path = listOf(p.category, p.subCategory)
                             .filter { it.isNotBlank() }
                             .joinToString(" > ")
@@ -1008,13 +1035,13 @@ fun ProductEditDialog(
                     }
                 }
 
-                // 3. Barcode / SKU
+                // 3. Product code / EAN (manual catalogue field; there is no scanner)
                 item {
                     OutlinedTextField(
                         value = barcode,
                         onValueChange = { barcode = it },
                         label = { Text("Barcode / EAN") },
-                        placeholder = { Text("Scan or enter barcode") },
+                        placeholder = { Text("Enter barcode / EAN if any") },
                         trailingIcon = {
                             IconButton(onClick = { barcode = "890" + (10000000..99999999).random().toString() }) {
                                 Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandGoldPrimary)
