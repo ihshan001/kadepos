@@ -59,7 +59,9 @@ object CurrencyUtils {
         cashReceived: Double,
         change: Double,
         footerMessage: String,
-        paperWidth: String = "58mm"
+        paperWidth: String = "58mm",
+        /** Everything the shop chose to show or hide under Settings > Bill design. */
+        design: ReceiptDesign = ReceiptDesign()
     ): String {
         val width = if (paperWidth == "58mm") 32 else 48
         val thin = "-".repeat(width)
@@ -67,12 +69,16 @@ object CurrencyUtils {
 
         val sb = StringBuilder()
 
-        // --- Shop header ---
-        sb.appendLine(centerText(businessName.uppercase(), width))
-        if (businessAddress.isNotBlank()) {
+        // --- Shop header. The name can be overridden for the bill only. ---
+        val headerName = design.headerName.ifBlank { businessName }
+        sb.appendLine(centerText(headerName.uppercase(), width))
+        if (design.headerNote.isNotBlank()) {
+            wrapText(design.headerNote, width).forEach { sb.appendLine(centerText(it, width)) }
+        }
+        if (design.showAddress && businessAddress.isNotBlank()) {
             wrapText(businessAddress, width).forEach { sb.appendLine(centerText(it, width)) }
         }
-        if (businessPhone.isNotBlank()) {
+        if (design.showPhone && businessPhone.isNotBlank()) {
             sb.appendLine(centerText("Tel: $businessPhone", width))
         }
         sb.appendLine(thick)
@@ -83,9 +89,13 @@ object CurrencyUtils {
             sb.appendLine(label.padEnd(labelWidth) + ": " + value.take(width - labelWidth - 2))
         }
         meta("Bill No", invoiceNumber)
-        meta("Date", formatDateOnly(timestamp))
-        meta("Time", formatTimeOnly(timestamp))
-        if (cashierName.isNotBlank()) meta("Served by", cashierName)
+        // Date and time of the sale, always from the sale's own timestamp so a
+        // reprint months later still shows when it was actually sold.
+        if (design.showDateTime) {
+            meta("Date", formatDateOnly(timestamp))
+            meta("Time", formatTimeOnly(timestamp))
+        }
+        if (design.showCashier && cashierName.isNotBlank()) meta("Served by", cashierName)
         if (customerName.isNotBlank() && !customerName.equals("Walk-in", true)) {
             meta("Customer", customerName)
         }
@@ -107,8 +117,10 @@ object CurrencyUtils {
 
         // --- Totals ---
         sb.appendLine(thin)
-        sb.appendLine(padBetween("Items: ${items.size}", "Qty: ${trimNumber(totalUnits)}", width))
-        sb.appendLine(thin)
+        if (design.showItemCount) {
+            sb.appendLine(padBetween("Items: ${items.size}", "Qty: ${trimNumber(totalUnits)}", width))
+            sb.appendLine(thin)
+        }
         sb.appendLine(padBetween("SUBTOTAL", money(subtotal), width))
         if (discount > 0) {
             sb.appendLine(padBetween("DISCOUNT", "-" + money(discount), width))
@@ -125,6 +137,10 @@ object CurrencyUtils {
 
         // --- Footer ---
         sb.appendLine(thin)
+        if (design.returnNote.isNotBlank()) {
+            wrapText(design.returnNote, width).forEach { sb.appendLine(centerText(it, width)) }
+            sb.appendLine("")
+        }
         if (footerMessage.isNotBlank()) {
             wrapText(footerMessage, width).forEach { sb.appendLine(centerText(it, width)) }
         }
@@ -177,9 +193,36 @@ object CurrencyUtils {
     }
 }
 
+/**
+ * The parts of the printed bill a shop can turn on, off or reword, without
+ * touching the layout itself. Defaults match a normal Sri Lankan retail bill.
+ */
+data class ReceiptDesign(
+    val headerName: String = "",
+    val headerNote: String = "",
+    val showAddress: Boolean = true,
+    val showPhone: Boolean = true,
+    val showDateTime: Boolean = true,
+    val showCashier: Boolean = true,
+    val showItemCount: Boolean = true,
+    val returnNote: String = ""
+)
+
 data class ReceiptItemData(
     val name: String,
     val quantity: Double,
     val unitPrice: Double,
     val lineTotal: Double
+)
+
+/** Reads the shop's saved bill-design choices off the business profile. */
+fun com.example.data.model.BusinessProfileEntity.receiptDesign(): ReceiptDesign = ReceiptDesign(
+    headerName = receiptHeaderName,
+    headerNote = receiptHeaderNote,
+    showAddress = receiptShowAddress,
+    showPhone = receiptShowPhone,
+    showDateTime = receiptShowDateTime,
+    showCashier = receiptShowCashier,
+    showItemCount = receiptShowItemCount,
+    returnNote = receiptReturnNote
 )

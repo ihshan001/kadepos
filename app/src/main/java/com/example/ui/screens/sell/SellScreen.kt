@@ -55,7 +55,9 @@ import com.example.ui.components.HintTone
 import com.example.ui.components.LowStockRestockDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.ui.util.ReceiptDesign
 import com.example.ui.util.ReceiptItemData
+import com.example.ui.util.receiptDesign
 import com.example.ui.viewmodel.CartItem
 import com.example.ui.viewmodel.PosViewModel
 
@@ -672,6 +674,7 @@ fun SellScreen(
             EditCartLineSheet(
                 item = line,
                 canChangePrice = viewModel.can(Permission.CHANGE_PRICE),
+                canDiscount = viewModel.can(Permission.GIVE_DISCOUNT),
                 onQuantity = { viewModel.updateCartItemQuantity(index, it) },
                 onPrice = { viewModel.updateCartItemPrice(index, it) },
                 onDiscount = { viewModel.updateCartItemDiscount(index, it) },
@@ -2241,7 +2244,8 @@ fun SaleCompleteDialog(
                             cashReceived = sale.cashReceived,
                             change = sale.changeGiven,
                             footerMessage = profile?.receiptFooter.orEmpty(),
-                            paperWidth = profile?.printerPaperWidth ?: "58mm"
+                            paperWidth = profile?.printerPaperWidth ?: "58mm",
+                            design = profile?.receiptDesign() ?: ReceiptDesign()
                         )
                     }
 
@@ -2334,6 +2338,7 @@ fun SaleCompleteDialog(
 fun EditCartLineSheet(
     item: CartItem,
     canChangePrice: Boolean,
+    canDiscount: Boolean,
     onQuantity: (Double) -> Unit,
     onPrice: (Double) -> Unit,
     onDiscount: (Double) -> Unit,
@@ -2465,21 +2470,32 @@ fun EditCartLineSheet(
             }
 
             // Line discount
-            Text("Take off an amount", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = discountText,
-                onValueChange = { discountText = it.filter { c -> c.isDigit() || c == '.' } },
-                placeholder = { Text("0") },
-                leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, color = TextSecondary) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
-            )
+            if (canDiscount) {
+                Text("Take off an amount", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = discountText,
+                    onValueChange = { discountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    placeholder = { Text("0") },
+                    leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, color = TextSecondary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+            }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            // Nothing this person may change? Say so plainly instead of showing
+            // a sheet that only has a quantity stepper and no explanation.
+            if (!canChangePrice && !canDiscount) {
+                com.example.ui.components.HintCard(
+                    text = "You can change how many, but not the price or discount. " +
+                        "Ask the owner if a customer needs a better price."
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             Surface(
                 shape = RoundedCornerShape(14.dp),

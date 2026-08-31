@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.model.ProductEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.data.model.Permission
 import com.example.ui.viewmodel.PosViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +39,16 @@ import com.example.ui.viewmodel.PosViewModel
 fun ProductsScreen(
     viewModel: PosViewModel
 ) {
+    // The Items tab is hidden for people without this permission, but a
+    // hidden tab is not a lock. This is the lock.
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_PRODUCTS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_PRODUCTS)
+        )
+        return
+    }
+
     val products by viewModel.products.collectAsState()
     val lowStockProducts by viewModel.lowStockProducts.collectAsState()
 

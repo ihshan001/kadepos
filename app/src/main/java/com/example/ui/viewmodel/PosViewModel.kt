@@ -20,6 +20,7 @@ import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
 import com.example.data.model.AuditLogEntity
 import com.example.data.model.Permission
+import com.example.data.model.PermissionOverrides
 import com.example.data.model.PermissionSet
 import com.example.data.model.StaffRole
 import com.example.data.repository.PosRepository
@@ -261,13 +262,23 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         combine(profile, staffList, _signedInStaffId) { prof, staff, signedId ->
             when {
                 prof == null -> PermissionSet.ownerFallback
-                !prof.staffEnabled -> PermissionSet.of(StaffRole.OWNER, 0L, prof.name.ifBlank { "Owner" })
+                // Solo shop: the owner said "it is just me" during setup, so
+                // nothing is ever locked and no PIN is asked for.
+                !prof.staffEnabled -> PermissionSet.soloOwner(prof.name)
                 else -> {
                     val member = staff.firstOrNull { it.id == signedId }
                     if (member == null) {
-                        PermissionSet.ownerFallback.copy(granted = emptySet())
+                        PermissionSet.lockedOut
                     } else {
-                        PermissionSet.of(StaffRole.fromName(member.role), member.id, member.name)
+                        // Role defaults plus/minus whatever the owner tuned
+                        // for this specific person.
+                        PermissionSet.resolve(
+                            role = StaffRole.fromName(member.role),
+                            staffId = member.id,
+                            staffName = member.name,
+                            extraCsv = member.extraPermissions,
+                            revokedCsv = member.revokedPermissions
+                        )
                     }
                 }
             }
@@ -297,6 +308,26 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
      * Runs [block] only if the signed-in user is allowed to; otherwise shows a
      * plain-language explanation. Returns whether it ran.
      */
+    /**
+     * The single enforcement point. Every function that changes shop data calls
+     * this first. Hiding a button in the UI is a courtesy; this is the rule.
+     * Denials are written to the activity log so the owner can see who tried.
+     */
+    private fun allow(permission: Permission): Boolean {
+        if (can(permission)) return true
+        val who = permissions.value
+        showMessage(who.denialMessage(permission))
+        viewModelScope.launch {
+            repository.recordAudit(
+                staffId = who.staffId,
+                staffName = who.staffName.ifBlank { "Unknown" },
+                action = "BLOCKED",
+                description = "Tried to ${permission.label.lowercase()} without permission"
+            )
+        }
+        return false
+    }
+
     fun requirePermission(permission: Permission, block: () -> Unit): Boolean {
         return if (can(permission)) {
             block()
@@ -461,6 +492,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateCartItemDiscount(index: Int, discount: Double) {
+        if (discount > 0.0 && !allow(Permission.GIVE_DISCOUNT)) return
         val list = _cart.value.toMutableList()
         if (index in list.indices) {
             list[index] = list[index].copy(discount = discount)
@@ -489,7 +521,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBillDiscount(discount: Double) {
-        _billDiscount.value = discount
+        // Clearing a discount is always allowed; adding one is not.
+        if (discount > 0.0 && !allow(Permission.GIVE_DISCOUNT)) return
+        _billDiscount.value = discount.coerceAtLeast(0.0)
     }
 
     fun setBillNote(note: String) {
@@ -503,6 +537,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         cardAmount: Double = 0.0,
         creditAmount: Double = 0.0
     ) {
+        if (!allow(Permission.CREATE_SALE)) return
         val cartItems = _cart.value
         if (cartItems.isEmpty()) return
 
@@ -578,6 +613,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Hold / Park Sale ---
     fun holdCurrentSale(label: String) {
+        if (!allow(Permission.CREATE_SALE)) return
         val cartItems = _cart.value
         if (cartItems.isEmpty()) {
             showMessage("Add something to the bill first")
@@ -619,6 +655,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteHeldSale(heldId: Long) {
+        if (!allow(Permission.CREATE_SALE)) return
         viewModelScope.launch {
             repository.deleteHeldSale(heldId)
             showMessage("Kept-aside bill removed")
@@ -640,6 +677,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         isTracked: Boolean,
         isFavourite: Boolean
     ) {
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
             if (id > 0) {
                 val existing = repository.getProductById(id)
@@ -695,6 +733,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun archiveProduct(productId: Long) {
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
             repository.archiveProduct(productId)
             showMessage("Product archived")
@@ -711,6 +750,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         creditLimit: Double,
         notes: String
     ) {
+        if (!allow(Permission.MANAGE_CUSTOMERS)) return
         viewModelScope.launch {
             if (id > 0) {
                 val existing = customers.value.find { it.id == id }
@@ -748,6 +788,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordManualCustomerCredit(customerId: Long, amount: Double, reason: String, note: String) {
+        if (!allow(Permission.MANAGE_CUSTOMERS)) return
         viewModelScope.launch {
             repository.recordManualCustomerCredit(customerId, amount, reason, note)
             showMessage("Credit debit of ${CurrencyUtils.formatLkr(amount)} recorded")
@@ -755,6 +796,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteCustomer(id: Long) {
+        if (!allow(Permission.DELETE_RECORDS)) return
         viewModelScope.launch {
             repository.deleteCustomer(id)
             showMessage("Customer deleted")
@@ -762,6 +804,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordCustomerCreditPayment(customerId: Long, amount: Double, paymentMethod: String, note: String) {
+        if (!allow(Permission.MANAGE_CUSTOMERS)) return
         viewModelScope.launch {
             repository.recordCustomerCreditPayment(customerId, amount, paymentMethod, note)
             showMessage("Payment of ${CurrencyUtils.formatLkr(amount)} recorded")
@@ -778,6 +821,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         address: String,
         notes: String
     ) {
+        if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             if (id > 0) {
                 val existing = suppliers.value.find { it.id == id }
@@ -811,6 +855,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteSupplier(supplierId: Long) {
+        if (!allow(Permission.DELETE_RECORDS)) return
         viewModelScope.launch {
             repository.deleteSupplier(supplierId)
             showMessage("Supplier deleted")
@@ -818,6 +863,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordSupplierPayment(supplierId: Long, amount: Double, paymentMethod: String, note: String) {
+        if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             repository.recordSupplierPayment(supplierId, amount, paymentMethod, note)
             showMessage("Supplier payment of ${CurrencyUtils.formatLkr(amount)} recorded")
@@ -825,6 +871,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun settlePurchaseDue(purchaseId: Long, amount: Double, paymentMethod: String, note: String) {
+        if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             repository.settlePurchaseDue(purchaseId, amount, paymentMethod, note)
             showMessage("PO Payment of ${CurrencyUtils.formatLkr(amount)} recorded")
@@ -836,6 +883,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deletePurchase(purchaseId: Long) {
+        if (!allow(Permission.DELETE_RECORDS)) return
         viewModelScope.launch {
             repository.deletePurchase(purchaseId)
             showMessage("Purchase order deleted")
@@ -849,6 +897,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         paidAmount: Double,
         notes: String
     ) {
+        if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             val total = items.sumOf { it.lineTotal }
             val due = (total - paidAmount).coerceAtLeast(0.0)
@@ -881,6 +930,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         invoiceNumber: String = "",
         notes: String = ""
     ) {
+        if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             if (totalAmount <= 0.0) {
                 showMessage("Enter the bill amount first")
@@ -922,6 +972,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Inventory direct actions ---
     fun receiveStockDirect(productId: Long, qty: Double, unitCost: Double, supplierName: String) {
+        if (!allow(Permission.MANAGE_INVENTORY)) return
         viewModelScope.launch {
             repository.receiveStockDirect(productId, qty, unitCost, supplierName)
             showMessage("Received +$qty units")
@@ -929,6 +980,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun receiveBatchStockDirect(items: List<Triple<ProductEntity, Double, Double>>, supplierName: String) {
+        if (!allow(Permission.MANAGE_INVENTORY)) return
         viewModelScope.launch {
             items.forEach { (prod, qty, cost) ->
                 if (qty > 0) {
@@ -940,6 +992,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun adjustStock(productId: Long, newCount: Double, reason: String, note: String) {
+        if (!allow(Permission.MANAGE_INVENTORY)) return
         viewModelScope.launch {
             repository.recordStockAdjustment(productId, newCount, reason, note)
             showMessage("Stock adjusted to $newCount")
@@ -948,6 +1001,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Expenses ---
     fun addExpense(category: String, amount: Double, paymentMethod: String, reference: String, note: String) {
+        if (!allow(Permission.MANAGE_EXPENSES)) return
         viewModelScope.launch {
             val expense = ExpenseEntity(
                 category = category,
@@ -964,6 +1018,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Shifts & Cash Register ---
     fun openShift(counterName: String, staffId: Long, staffName: String, openingCash: Double) {
+        if (!allow(Permission.MANAGE_CASH)) return
         viewModelScope.launch {
             repository.openShift(counterName, staffId, staffName, openingCash)
             showMessage("Shift opened for $staffName at $counterName")
@@ -971,6 +1026,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeShift(shiftId: Long, actualCash: Double, reason: String) {
+        if (!allow(Permission.MANAGE_CASH)) return
         viewModelScope.launch {
             repository.closeShift(shiftId, actualCash, reason)
             showMessage("Shift closed")
@@ -978,6 +1034,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordCashMovement(shiftId: Long, type: String, amount: Double, reason: String, note: String) {
+        if (!allow(Permission.MANAGE_CASH)) return
         viewModelScope.launch {
             repository.recordCashMovement(shiftId, type, amount, reason, note)
             val typeStr = if (type == "CASH_IN") "Money put in" else "Money taken out"
@@ -1005,6 +1062,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Staff & roles ---
     fun switchActiveStaff(staff: StaffEntity) {
+        if (!allow(Permission.MANAGE_STAFF)) return
         viewModelScope.launch {
             val current = repository.getProfileSync() ?: BusinessProfileEntity()
             repository.saveProfile(
@@ -1020,38 +1078,134 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun saveStaff(id: Long, name: String, phone: String, role: String, pin: String, isActive: Boolean) {
-        if (!can(Permission.MANAGE_STAFF)) {
-            showMessage(permissions.value.denialMessage(Permission.MANAGE_STAFF))
+    /**
+     * Adds or updates a team member. [extra] and [revoked] are the per-person
+     * tweaks on top of the role; pass null to leave them untouched.
+     */
+    fun saveStaff(
+        id: Long,
+        name: String,
+        phone: String,
+        role: String,
+        pin: String,
+        isActive: Boolean,
+        extra: Set<Permission>? = null,
+        revoked: Set<Permission>? = null
+    ) {
+        if (!allow(Permission.MANAGE_STAFF)) return
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            showMessage("Please enter a name")
+            return
+        }
+        if (pin.isNotBlank() && pin.length != 4) {
+            showMessage("A PIN must be exactly 4 numbers")
             return
         }
         viewModelScope.launch {
+            // Two people with the same PIN would make sign-in ambiguous.
+            val clash = staffList.value.firstOrNull {
+                it.id != id && it.pin.isNotBlank() && it.pin == pin
+            }
+            if (pin.isNotBlank() && clash != null) {
+                showMessage("${clash.name} already uses that PIN. Please pick another.")
+                return@launch
+            }
+
+            val encoded = if (extra != null && revoked != null) {
+                PermissionOverrides.encode(extra, revoked)
+            } else null
+
             if (id > 0) {
                 val existing = staffList.value.firstOrNull { it.id == id } ?: return@launch
+                // Never let the last owner be demoted or the shop locks itself out.
+                if (existing.role.equals("Owner", true) && !role.equals("Owner", true)) {
+                    val owners = staffList.value.count { it.isActive && it.role.equals("Owner", true) }
+                    if (owners <= 1) {
+                        showMessage("This is your only owner. Make someone else an owner first.")
+                        return@launch
+                    }
+                }
                 repository.updateStaff(
                     existing.copy(
-                        name = name,
-                        phone = phone,
+                        name = cleanName,
+                        phone = phone.trim(),
                         role = role,
                         pin = pin.ifBlank { existing.pin },
-                        isActive = isActive
+                        isActive = isActive,
+                        extraPermissions = encoded?.first ?: existing.extraPermissions,
+                        revokedPermissions = encoded?.second ?: existing.revokedPermissions
                     )
                 )
-                audit("STAFF_UPDATED", "Updated $name ($role)")
-                showMessage("$name updated")
+                audit("STAFF_UPDATED", "Updated $cleanName ($role)")
+                showMessage("$cleanName updated")
             } else {
                 repository.insertStaff(
                     StaffEntity(
-                        name = name,
-                        phone = phone,
+                        name = cleanName,
+                        phone = phone.trim(),
                         role = role,
                         pin = pin,
-                        isActive = isActive
+                        isActive = isActive,
+                        extraPermissions = encoded?.first.orEmpty(),
+                        revokedPermissions = encoded?.second.orEmpty()
                     )
                 )
-                audit("STAFF_ADDED", "Added $name as $role")
-                showMessage("$name added to your team")
+                audit("STAFF_ADDED", "Added $cleanName as $role")
+                showMessage("$cleanName added to your team")
             }
+        }
+    }
+
+    /** Resolved permissions for a given team member, for the "what can they do" editor. */
+    fun permissionsFor(staff: StaffEntity): PermissionSet = PermissionSet.resolve(
+        role = StaffRole.fromName(staff.role),
+        staffId = staff.id,
+        staffName = staff.name,
+        extraCsv = staff.extraPermissions,
+        revokedCsv = staff.revokedPermissions
+    )
+
+    /**
+     * Turn one capability on or off for one person, relative to their role.
+     * Matching the role default clears the override rather than storing a
+     * redundant entry, so changing someone's role later behaves predictably.
+     */
+    fun setStaffPermission(staff: StaffEntity, permission: Permission, allowed: Boolean) {
+        if (!allow(Permission.MANAGE_STAFF)) return
+        val role = StaffRole.fromName(staff.role)
+        if (role == StaffRole.OWNER) {
+            showMessage("Owners always have full access.")
+            return
+        }
+        val extra = PermissionOverrides.decode(staff.extraPermissions).toMutableSet()
+        val revoked = PermissionOverrides.decode(staff.revokedPermissions).toMutableSet()
+        val roleHasIt = role.permissions.contains(permission)
+
+        extra.remove(permission)
+        revoked.remove(permission)
+        when {
+            allowed && !roleHasIt -> extra.add(permission)
+            !allowed && roleHasIt -> revoked.add(permission)
+        }
+
+        viewModelScope.launch {
+            val (extraCsv, revokedCsv) = PermissionOverrides.encode(extra, revoked)
+            repository.updateStaff(
+                staff.copy(extraPermissions = extraCsv, revokedPermissions = revokedCsv)
+            )
+            val verb = if (allowed) "Allowed" else "Blocked"
+            audit("PERMISSION", verb + " " + permission.label + " for " + staff.name)
+        }
+    }
+
+    /** Drop all per-person tweaks and go back to the plain role. */
+    fun resetStaffPermissions(staff: StaffEntity) {
+        if (!allow(Permission.MANAGE_STAFF)) return
+        viewModelScope.launch {
+            repository.updateStaff(staff.copy(extraPermissions = "", revokedPermissions = ""))
+            audit("PERMISSION", "Reset ${staff.name} to the standard ${staff.role} access")
+            showMessage("${staff.name} is back to standard ${staff.role} access")
         }
     }
 
@@ -1203,7 +1357,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 change = sale.changeGiven,
                 footer = p.receiptFooter,
                 currencySymbol = p.currencySymbol,
-                paperWidth = p.printerPaperWidth
+                paperWidth = p.printerPaperWidth,
+                timestamp = sale.timestamp,
+                headerName = p.receiptHeaderName,
+                headerNote = p.receiptHeaderNote,
+                showAddress = p.receiptShowAddress,
+                showPhone = p.receiptShowPhone,
+                showDateTime = p.receiptShowDateTime,
+                showCashier = p.receiptShowCashier,
+                showItemCount = p.receiptShowItemCount,
+                returnNote = p.receiptReturnNote
             )
             showMessage(problem ?: "Receipt printed")
         }
@@ -1223,6 +1386,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
      * belonging to a different shop type, so categories can never overlap.
      */
     fun installShopCatalog(shopTypeKey: String) {
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
             val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
             repository.installShopTypeCatalog(preset.key, preset.products)
@@ -1233,6 +1397,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Removes starter items without touching anything the owner added. */
     fun clearStarterCatalog() {
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
             repository.clearAllProducts()
             audit("CATALOG", "Cleared the product list")
@@ -1242,6 +1407,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Switching shop type wipes the old catalogue so nothing overlaps. */
     fun changeShopType(shopTypeKey: String, loadStarterItems: Boolean) {
+        if (!allow(Permission.MANAGE_SETTINGS)) return
         viewModelScope.launch {
             val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
             val current = repository.getProfileSync() ?: BusinessProfileEntity()
@@ -1259,6 +1425,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteProduct(productId: Long) {
+        if (!allow(Permission.DELETE_RECORDS)) return
         viewModelScope.launch {
             repository.deleteProduct(productId)
             showMessage("Product deleted from catalog")
@@ -1266,6 +1433,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteExpense(expenseId: Long) {
+        if (!allow(Permission.DELETE_RECORDS)) return
         viewModelScope.launch {
             repository.deleteExpense(expenseId)
             showMessage("Expense entry deleted")
@@ -1277,6 +1445,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveBusinessProfile(updated: BusinessProfileEntity) {
+        if (!allow(Permission.MANAGE_SETTINGS)) return
         viewModelScope.launch {
             repository.saveProfile(updated)
             audit("SETTINGS", "Business details updated")

@@ -32,6 +32,9 @@ import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.data.model.StaffRole
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.example.data.model.Permission
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Print
@@ -865,6 +868,11 @@ fun CashMovementDialog(
 // Staff Screen
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
+// ---------------------------------------------------------------------------
+// Team. Who works here, what each person is allowed to touch, and who is at
+// the till right now. Only reachable with MANAGE_STAFF.
+// ---------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StaffScreen(
     viewModel: PosViewModel,
@@ -882,12 +890,20 @@ fun StaffScreen(
     val staffList by viewModel.staffList.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
+    var editing by remember { mutableStateOf<StaffEntity?>(null) }
+    var addingNew by remember { mutableStateOf(false) }
+    var permissionsFor by remember { mutableStateOf<StaffEntity?>(null) }
+
+    // A shop that told us "it is just me" has no team to manage. Rather than
+    // showing an empty list, explain how to turn the feature on.
+    val teamMode = profile?.staffEnabled == true
+
     Scaffold(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets
             .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
-                title = { Text("Staff & Cashiers", fontWeight = FontWeight.Bold) },
+                title = { Text("My team", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -896,53 +912,506 @@ fun StaffScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
             )
         },
+        floatingActionButton = {
+            if (teamMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { addingNew = true },
+                    containerColor = BrandTealPrimary,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add person", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
         containerColor = LightBackground
     ) { padding ->
+        if (!teamMode) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    tint = TextMuted,
+                    modifier = Modifier.size(56.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "You run this shop on your own",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    "Nothing is locked and no PIN is needed. If someone starts helping " +
+                        "you at the counter, turn on \"I have staff\" in Settings and you " +
+                        "can decide exactly what they are allowed to do.",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            return@Scaffold
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text("SWITCH ACTIVE CASHIER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
+                Text(
+                    "Tap a person to change their details, or \"What they can do\" to " +
+                        "allow or block things like changing prices.",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
             }
 
-            items(staffList) { staff ->
-                val isActive = profile?.activeStaffId == staff.id
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = if (isActive) BrandMintSurface else LightSurface),
-                    border = CardDefaults.outlinedCardBorder(),
+            if (staffList.isEmpty()) {
+                item {
+                    com.example.ui.components.HintCard(
+                        text = "No one added yet. Tap \"Add person\" to give a staff member " +
+                            "their own PIN, so every bill shows who sold it."
+                    )
+                }
+            }
+
+            items(staffList, key = { it.id }) { staff ->
+                val resolved = viewModel.permissionsFor(staff)
+                val isAtTill = profile?.activeStaffId == staff.id
+                StaffCard(
+                    staff = staff,
+                    permissionCount = resolved.granted.size,
+                    isCustomised = resolved.isCustomised(),
+                    isAtTill = isAtTill,
+                    onEdit = { editing = staff },
+                    onPermissions = { permissionsFor = staff },
+                    onToggleActive = { viewModel.setStaffActive(staff, !staff.isActive) }
+                )
+            }
+        }
+    }
+
+    if (addingNew || editing != null) {
+        StaffEditorDialog(
+            existing = editing,
+            onSave = { name, phone, role, pin, active ->
+                viewModel.saveStaff(
+                    id = editing?.id ?: 0L,
+                    name = name,
+                    phone = phone,
+                    role = role,
+                    pin = pin,
+                    isActive = active
+                )
+                editing = null
+                addingNew = false
+            },
+            onDismiss = { editing = null; addingNew = false }
+        )
+    }
+
+    permissionsFor?.let { staff ->
+        StaffPermissionsDialog(
+            staff = staff,
+            resolved = viewModel.permissionsFor(staff),
+            onToggle = { perm, allowed -> viewModel.setStaffPermission(staff, perm, allowed) },
+            onReset = { viewModel.resetStaffPermissions(staff); permissionsFor = null },
+            onDismiss = { permissionsFor = null }
+        )
+    }
+}
+
+@Composable
+private fun StaffCard(
+    staff: StaffEntity,
+    permissionCount: Int,
+    isCustomised: Boolean,
+    isAtTill: Boolean,
+    onEdit: () -> Unit,
+    onPermissions: () -> Unit,
+    onToggleActive: () -> Unit
+) {
+    val role = StaffRole.fromName(staff.role)
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (staff.isActive) LightSurface else LightSurfaceVariant
+        ),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.switchActiveStaff(staff) }
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (staff.isActive) BrandMintSurface else LightBorder),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(staff.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("${staff.role} • PIN: **** • ${staff.phone}", fontSize = 12.sp, color = TextSecondary)
-                        }
-                        if (isActive) {
-                            Badge(containerColor = BrandTealPrimary) {
-                                Text("LOGGED IN", color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(4.dp))
-                            }
-                        } else {
-                            TextButton(onClick = { viewModel.switchActiveStaff(staff) }) {
-                                Text("Switch")
+                    Text(
+                        staff.name.take(1).uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        color = if (staff.isActive) BrandTealPrimary else TextMuted
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            staff.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = if (staff.isActive) TextPrimary else TextSecondary
+                        )
+                        if (isAtTill) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(6.dp), color = BrandTealPrimary) {
+                                Text(
+                                    "AT THE TILL",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
                             }
                         }
                     }
+                    Text(
+                        role.friendlyName + if (staff.pin.isNotBlank()) "  ·  PIN set" else "  ·  No PIN",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    if (!staff.isActive) {
+                        Text("Paused — cannot sign in", fontSize = 11.sp, color = StatusAmber)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                if (isCustomised) "$permissionCount things allowed (adjusted)"
+                else "$permissionCount things allowed",
+                fontSize = 11.sp,
+                color = if (isCustomised) StatusBlue else TextMuted
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onPermissions,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("What they can do", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onEdit,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Edit", fontSize = 12.sp)
+                }
+                TextButton(onClick = onToggleActive) {
+                    Text(
+                        if (staff.isActive) "Pause" else "Restore",
+                        fontSize = 12.sp,
+                        color = if (staff.isActive) StatusAmber else StatusGreen
+                    )
                 }
             }
         }
     }
 }
+
+/** Add or edit one person: name, phone, role and their own 4 digit PIN. */
+@Composable
+private fun StaffEditorDialog(
+    existing: StaffEntity?,
+    onSave: (String, String, String, String, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
+    var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
+    var role by remember { mutableStateOf(StaffRole.fromName(existing?.role)) }
+    var pin by remember { mutableStateOf("") }
+    var active by remember { mutableStateOf(existing?.isActive ?: true) }
+
+    val nameOk = name.trim().isNotBlank()
+    val pinOk = pin.isEmpty() || pin.length == 4
+    // A brand new person with no PIN could never sign in.
+    val needsPin = existing == null && pin.length != 4
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    if (existing == null) "Add someone to your team" else "Edit ${existing.name}",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Their name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it.filter { c -> c.isDigit() || c == ' ' } },
+                    label = { Text("Phone (optional)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("What is their job?", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                Spacer(modifier = Modifier.height(6.dp))
+                StaffRole.selectableRoles.forEach { option ->
+                    val selected = role == option
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) BrandMintSurface else LightSurface
+                        ),
+                        border = CardDefaults.outlinedCardBorder(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clickable { role = option }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selected, onClick = { role = option })
+                            Column(modifier = Modifier.padding(start = 4.dp)) {
+                                Text(
+                                    option.friendlyName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = TextPrimary
+                                )
+                                Text(option.summary, fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4) pin = it.filter(Char::isDigit) },
+                    label = {
+                        Text(if (existing == null) "Their 4 number PIN" else "New PIN (leave blank to keep)")
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    supportingText = {
+                        Text(
+                            "They type this to sign in. Every bill records who sold it.",
+                            fontSize = 11.sp
+                        )
+                    },
+                    isError = !pinOk,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (existing != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Can sign in", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Turn off when someone leaves, instead of deleting them.",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Switch(checked = active, onCheckedChange = { active = it })
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Cancel") }
+                    Button(
+                        onClick = { onSave(name, phone, role.roleName, pin, active) },
+                        enabled = nameOk && pinOk && !needsPin,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The permission editor. Grouped by area with plain descriptions, because the
+ * person reading it runs a shop, not a server.
+ */
+@Composable
+private fun StaffPermissionsDialog(
+    staff: StaffEntity,
+    resolved: com.example.data.model.PermissionSet,
+    onToggle: (Permission, Boolean) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val role = StaffRole.fromName(staff.role)
+    val isOwner = role == StaffRole.OWNER
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxHeight(0.88f)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    "What ${staff.name} can do",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    role.friendlyName + " · " + role.summary,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
+                if (isOwner) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    com.example.ui.components.HintCard(
+                        text = "Owners always have full access. To limit someone, " +
+                            "make them a Manager, Senior staff or Cashier instead."
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Permission.grouped().forEach { (group, perms) ->
+                        item(key = "hdr_" + group.name) {
+                            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                                Text(
+                                    group.title.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = BrandTealPrimary
+                                )
+                                Text(group.blurb, fontSize = 10.sp, color = TextMuted)
+                            }
+                        }
+                        items(perms, key = { it.name }) { perm ->
+                            val allowed = resolved.can(perm)
+                            val differs = allowed != role.permissions.contains(perm)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            perm.label,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        if (perm.sensitive) {
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Icon(
+                                                Icons.Default.Lock,
+                                                contentDescription = "Sensitive",
+                                                tint = StatusAmber,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                        if (differs) {
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Text(
+                                                "changed",
+                                                fontSize = 9.sp,
+                                                color = StatusBlue,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(perm.description, fontSize = 11.sp, color = TextSecondary)
+                                }
+                                Switch(
+                                    checked = allowed,
+                                    enabled = !isOwner,
+                                    onCheckedChange = { onToggle(perm, it) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!isOwner && resolved.isCustomised()) {
+                        OutlinedButton(
+                            onClick = onReset,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Reset to standard", fontSize = 12.sp) }
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
 
 // -------------------------------------------------------------------------------------
 // Settings Screen

@@ -31,6 +31,7 @@ import com.example.ui.screens.sell.SaleCompleteDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosTab
+import com.example.data.model.Permission
 import com.example.ui.viewmodel.PosViewModel
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -40,6 +41,14 @@ import java.util.Calendar
 fun SalesHistoryScreen(
     viewModel: PosViewModel
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.VIEW_SALES_HISTORY)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.VIEW_SALES_HISTORY)
+        )
+        return
+    }
+
     val sales by viewModel.sales.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val coroutineScope = rememberCoroutineScope()

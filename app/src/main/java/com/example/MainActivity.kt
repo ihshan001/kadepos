@@ -158,7 +158,9 @@ fun KadePosApp(viewModel: PosViewModel) {
     // ---- Adaptive bottom navigation --------------------------------------
     val navEntries = buildList {
         add(NavEntry(PosTab.SELL, "Sell", Icons.Default.PointOfSale))
-        add(NavEntry(PosTab.SALES, "Bills", Icons.Default.ReceiptLong))
+        if (permissions.can(Permission.VIEW_SALES_HISTORY)) {
+            add(NavEntry(PosTab.SALES, "Bills", Icons.Default.ReceiptLong))
+        }
 
         val canSeeItems = permissions.can(Permission.MANAGE_PRODUCTS)
         if (canSeeItems) {

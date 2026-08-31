@@ -19,6 +19,18 @@ data class BusinessProfileEntity(
     val receiptStyle: String = "Modern", // Minimal, Classic, Detailed, Modern
     val receiptFooter: String = "Thank you! Please come again.",
     val receiptShowQr: Boolean = false,
+    // --- What the printed bill shows. All editable under Settings > Bill design. ---
+    /** Overrides the shop name on the receipt only. Blank = use the business name. */
+    val receiptHeaderName: String = "",
+    /** Free line under the shop name, e.g. "Wholesale & Retail" or a VAT number. */
+    val receiptHeaderNote: String = "",
+    val receiptShowAddress: Boolean = true,
+    val receiptShowPhone: Boolean = true,
+    val receiptShowDateTime: Boolean = true,
+    val receiptShowCashier: Boolean = true,
+    val receiptShowItemCount: Boolean = true,
+    /** Adds a "Please keep this bill for returns" style line above the footer. */
+    val receiptReturnNote: String = "",
     // Printer hardware configuration
     val printerName: String = "",
     val printerAddress: String = "", // MAC address for Bluetooth, IP address for Wi-Fi
@@ -199,11 +211,18 @@ data class StaffEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val phone: String = "",
-    val role: String = "Cashier", // Owner, Manager, Cashier
+    val role: String = "Cashier", // Owner, Manager, Supervisor, Cashier
     val pin: String = "",
     val isActive: Boolean = true,
     val totalSalesCount: Int = 0,
-    val totalSalesAmount: Double = 0.0
+    val totalSalesAmount: Double = 0.0,
+    /**
+     * Per-person tweaks on top of the role, as comma separated Permission
+     * names. Stored as text so adding a permission never needs a migration,
+     * and unknown names are ignored rather than crashing an older record.
+     */
+    val extraPermissions: String = "",
+    val revokedPermissions: String = ""
 )
 
 /**

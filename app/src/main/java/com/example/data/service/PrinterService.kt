@@ -472,7 +472,17 @@ class PrinterService(private val context: Context) {
         change: Double,
         footer: String,
         currencySymbol: String,
-        paperWidth: String
+        paperWidth: String,
+        /** Sale time. Passed in so a reprint shows when it was actually sold. */
+        timestamp: Long = System.currentTimeMillis(),
+        headerName: String = "",
+        headerNote: String = "",
+        showAddress: Boolean = true,
+        showPhone: Boolean = true,
+        showDateTime: Boolean = true,
+        showCashier: Boolean = true,
+        showItemCount: Boolean = true,
+        returnNote: String = ""
     ): String? {
         val cols = columnsFor(paperWidth)
         fun money(value: Double) = "%,.2f".format(value)
@@ -482,21 +492,33 @@ class PrinterService(private val context: Context) {
             .alignCenter()
             .bold(true)
             .doubleSize(true)
-            .textLine(storeName.ifBlank { "My Shop" })
+            .textLine(headerName.ifBlank { storeName }.ifBlank { "My Shop" })
             .doubleSize(false)
             .bold(false)
-        if (address.isNotBlank()) builder.textLine(address)
-        if (phone.isNotBlank()) builder.textLine(phone)
+        if (headerNote.isNotBlank()) builder.textLine(headerNote)
+        if (showAddress && address.isNotBlank()) builder.textLine(address)
+        if (showPhone && phone.isNotBlank()) builder.textLine(phone)
         builder.textLine("-".repeat(cols))
             .alignLeft()
             .textLine("Bill: $invoiceNo")
-            .textLine(
+        // Date and time come from the sale itself, not "now", so reprinting an
+        // old bill does not stamp it with today's date.
+        if (showDateTime) {
+            val stamp = java.util.Date(timestamp)
+            builder.textLine(
                 "Date: " + java.text.SimpleDateFormat(
-                    "dd/MM/yyyy HH:mm",
+                    "dd/MM/yyyy",
                     java.util.Locale.getDefault()
-                ).format(java.util.Date())
+                ).format(stamp)
             )
-        if (cashier.isNotBlank()) builder.textLine("Served by: $cashier")
+            builder.textLine(
+                "Time: " + java.text.SimpleDateFormat(
+                    "hh:mm a",
+                    java.util.Locale.getDefault()
+                ).format(stamp)
+            )
+        }
+        if (showCashier && cashier.isNotBlank()) builder.textLine("Served by: $cashier")
         if (customerName.isNotBlank() && !customerName.equals("Walk-in", true)) {
             builder.textLine("Customer: $customerName")
         }
@@ -524,9 +546,11 @@ class PrinterService(private val context: Context) {
             "%.2f".format(totalUnits).trimEnd('0').trimEnd('.')
         }
         builder.textLine("-".repeat(cols))
-            .twoColumn("Items: ${items.size}", "Qty: $unitsStr", cols)
-            .textLine("-".repeat(cols))
-            .twoColumn("Subtotal", money(subtotal), cols)
+        if (showItemCount) {
+            builder.twoColumn("Items: ${items.size}", "Qty: $unitsStr", cols)
+                .textLine("-".repeat(cols))
+        }
+        builder.twoColumn("Subtotal", money(subtotal), cols)
         if (discount > 0) builder.twoColumn("Discount", "-" + money(discount), cols)
         if (tax > 0) builder.twoColumn("Tax", money(tax), cols)
         builder.bold(true)
@@ -544,7 +568,8 @@ class PrinterService(private val context: Context) {
 
         builder.textLine("-".repeat(cols))
             .alignCenter()
-            .textLine(footer.ifBlank { "Thank you! Please come again." })
+        if (returnNote.isNotBlank()) builder.textLine(returnNote)
+        builder.textLine(footer.ifBlank { "Thank you! Please come again." })
             .feed(4)
             .cutPaper()
 
