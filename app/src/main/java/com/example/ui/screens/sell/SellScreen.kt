@@ -1,9 +1,14 @@
 package com.example.ui.screens.sell
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -23,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
@@ -32,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -48,8 +55,12 @@ import com.example.ui.components.HintTone
 import com.example.ui.components.LowStockRestockDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.ui.util.ReceiptItemData
 import com.example.ui.viewmodel.CartItem
 import com.example.ui.viewmodel.PosViewModel
+
+/** Horizontal breathing room used by the sell canvas. */
+private val SCREEN_PADDING = 14.dp
 
 /** Chip labels that are not real product categories. */
 private const val ALL_CATEGORY = "All"
@@ -126,6 +137,12 @@ fun SellScreen(
         if (selectedCategory !in categories) selectedCategory = ALL_CATEGORY
     }
 
+    // Scroll the chosen chip into view so the selection is never off-screen.
+    LaunchedEffect(selectedCategory, categories) {
+        val index = categories.indexOf(selectedCategory)
+        if (index >= 0) categoryListState.animateScrollToItem(index)
+    }
+
     val filteredProducts = remember(products, searchQuery, selectedCategory) {
         if (searchQuery.isNotBlank()) {
             products.filter {
@@ -148,6 +165,8 @@ fun SellScreen(
     val totalAmount = remember(subtotal, billDiscount) { (subtotal - billDiscount).coerceAtLeast(0.0) }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = {
@@ -257,7 +276,7 @@ fun SellScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(horizontal = SCREEN_PADDING, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // 1. Search Bar with Barcode Scanner & Clear Buttons
@@ -389,15 +408,30 @@ fun SellScreen(
                 }
 
                 // 3. Category chips.
-                // A LazyRow, not a Row: every category the shop actually has is
-                // reachable by swiping sideways, so the last chip is never cut
-                // off or wrapped onto a second line.
+                // The parent LazyColumn insets everything by 14dp, which boxed
+                // this row in and made the last chip look cut off. Negating that
+                // inset lets the row run the full width of the screen and scroll
+                // edge to edge, with the 14dp moved inside as content padding so
+                // the first and last chips still sit correctly when at rest.
                 item {
                     LazyRow(
                         state = categoryListState,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .layout { measurable, constraints ->
+                                val extra = SCREEN_PADDING.roundToPx() * 2
+                                val placeable = measurable.measure(
+                                    constraints.copy(
+                                        maxWidth = constraints.maxWidth + extra,
+                                        minWidth = constraints.maxWidth + extra
+                                    )
+                                )
+                                layout(placeable.width, placeable.height) {
+                                    placeable.place(-SCREEN_PADDING.roundToPx(), 0)
+                                }
+                            },
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(end = 4.dp)
+                        contentPadding = PaddingValues(horizontal = SCREEN_PADDING)
                     ) {
                         items(categories, key = { it }) { cat ->
                             val isSelected = selectedCategory == cat
@@ -406,7 +440,7 @@ fun SellScreen(
                                 color = if (isSelected) BrandTealPrimary else LightSurface,
                                 border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
                                 modifier = Modifier
-                                    .height(34.dp)
+                                    .height(36.dp)
                                     .clickable {
                                         selectedCategory = cat
                                         searchQuery = ""
@@ -416,11 +450,11 @@ fun SellScreen(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .fillMaxHeight()
-                                        .padding(horizontal = 14.dp)
+                                        .padding(horizontal = 16.dp)
                                 ) {
                                     Text(
                                         text = cat,
-                                        fontSize = 12.sp,
+                                        fontSize = 13.sp,
                                         maxLines = 1,
                                         softWrap = false,
                                         overflow = TextOverflow.Visible,
@@ -572,13 +606,17 @@ fun SellScreen(
                 }
             }
 
-            // 7. Sticky Bottom Checkout Bar
+            // 7. Sticky checkout bar. Sits flush against the bottom navigation
+            // with no gap: the parent Scaffold already reserves that space, so
+            // this Surface must not add an inset of its own.
             Surface(
                 color = LightSurface,
-                shadowElevation = 10.dp,
-                border = CardDefaults.outlinedCardBorder()
+                shadowElevation = 12.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    HorizontalDivider(color = LightBorder, thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
                     if (billDiscount > 0) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -627,6 +665,21 @@ fun SellScreen(
     }
 
     // --- Dialogs & BottomSheets ---
+
+    // Tapping a bill line opens the editor: quantity, real selling price, discount.
+    editingCartItemIndex?.let { index ->
+        cart.getOrNull(index)?.let { line ->
+            EditCartLineSheet(
+                item = line,
+                canChangePrice = viewModel.can(Permission.CHANGE_PRICE),
+                onQuantity = { viewModel.updateCartItemQuantity(index, it) },
+                onPrice = { viewModel.updateCartItemPrice(index, it) },
+                onDiscount = { viewModel.updateCartItemDiscount(index, it) },
+                onRemove = { viewModel.removeFromCart(index) },
+                onDismiss = { editingCartItemIndex = null }
+            )
+        }
+    }
 
     if (showShiftOverviewDialog) {
         TodayShiftOverviewDialog(
@@ -1180,17 +1233,32 @@ fun CartItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Tap anywhere on the line to change quantity, price or discount.
+                .clickable { onEdit() }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1.2f)) {
                 Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-                Text(
-                    CurrencyUtils.formatLkr(item.unitPrice) + if (item.discount > 0) " (-${CurrencyUtils.formatLkr(item.discount)})" else "",
-                    fontSize = 12.sp,
-                    color = TextSecondary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (item.isPriceChanged) {
+                        // Show the old price struck through so the change is obvious.
+                        Text(
+                            CurrencyUtils.formatLkr(item.listPrice),
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            textDecoration = TextDecoration.LineThrough
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(
+                        CurrencyUtils.formatLkr(item.unitPrice) + if (item.discount > 0) " (-${CurrencyUtils.formatLkr(item.discount)})" else "",
+                        fontSize = 12.sp,
+                        fontWeight = if (item.isPriceChanged) FontWeight.Bold else FontWeight.Normal,
+                        color = if (item.isPriceChanged) StatusAmber else TextSecondary
+                    )
+                }
             }
 
             // Quantity stepper
@@ -2145,48 +2213,61 @@ fun SaleCompleteDialog(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Thermal receipt preview
+                    // Receipt preview. This is the *exact* text that goes to
+                    // the thermal printer - same monospace grid, same columns,
+                    // same quantity lines - so what the shopkeeper sees on
+                    // screen is what comes out on paper.
+                    val receiptText = remember(sale, items, profile) {
+                        CurrencyUtils.buildReceiptText(
+                            businessName = profile?.name.orEmpty(),
+                            businessPhone = profile?.phone.orEmpty(),
+                            businessAddress = profile?.address.orEmpty(),
+                            invoiceNumber = sale.invoiceNumber,
+                            timestamp = sale.timestamp,
+                            cashierName = sale.cashierName,
+                            customerName = sale.customerName,
+                            items = items.map {
+                                ReceiptItemData(
+                                    name = it.productName,
+                                    quantity = it.quantity,
+                                    unitPrice = it.unitPrice,
+                                    lineTotal = it.lineTotal
+                                )
+                            },
+                            subtotal = sale.subtotal,
+                            discount = sale.discountAmount,
+                            total = sale.totalAmount,
+                            paymentMethod = sale.paymentMethod,
+                            cashReceived = sale.cashReceived,
+                            change = sale.changeGiven,
+                            footerMessage = profile?.receiptFooter.orEmpty(),
+                            paperWidth = profile?.printerPaperWidth ?: "58mm"
+                        )
+                    }
+
                     Card(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(4.dp),
                         colors = CardDefaults.cardColors(containerColor = ReceiptPaper),
                         border = CardDefaults.outlinedCardBorder(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                     ) {
-                        LazyColumn(
-                            modifier = Modifier.padding(14.dp),
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 10.dp, vertical = 14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            item {
-                                Text(profile?.name?.uppercase() ?: "ABC STORES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ReceiptText)
-                                Text(profile?.phone ?: "077 123 4567", fontSize = 10.sp, color = ReceiptText)
-                                Text("Invoice: ${sale.invoiceNumber}", fontSize = 10.sp, color = ReceiptText)
-                                Text("Date: ${CurrencyUtils.formatDateTime(sale.timestamp)}", fontSize = 10.sp, color = ReceiptText)
-                                Text("--------------------------------", fontFamily = FontFamily.Monospace, color = ReceiptDashed)
-                            }
-
-                            items(items.size) { idx ->
-                                val itm = items[idx]
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(itm.productName, fontSize = 11.sp, color = ReceiptText)
-                                    Text(CurrencyUtils.formatLkr(itm.lineTotal), fontSize = 11.sp, color = ReceiptText)
-                                }
-                            }
-
-                            item {
-                                Text("--------------------------------", fontFamily = FontFamily.Monospace, color = ReceiptDashed)
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("TOTAL", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = ReceiptText)
-                                    Text(CurrencyUtils.formatLkr(sale.totalAmount), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = ReceiptText)
-                                }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("PAID (${sale.paymentMethod})", fontSize = 10.sp, color = ReceiptText)
-                                    Text(CurrencyUtils.formatLkr(if (sale.cashReceived > 0) sale.cashReceived else sale.totalAmount), fontSize = 10.sp, color = ReceiptText)
-                                }
-                                Text("--------------------------------", fontFamily = FontFamily.Monospace, color = ReceiptDashed)
-                                Text(profile?.receiptFooter ?: "Thank you!", fontSize = 10.sp, color = ReceiptText, textAlign = TextAlign.Center)
-                            }
+                            Text(
+                                text = receiptText,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp,
+                                color = ReceiptText,
+                                softWrap = false
+                            )
                         }
                     }
                 }
@@ -2242,3 +2323,215 @@ fun SaleCompleteDialog(
         }
     }
 }
+
+// -------------------------------------------------------------------------------------
+// Edit a line in the bill: quantity, the price it is actually selling for, and
+// any discount. Retail is not fixed-price — a regular haggles, a dented tin
+// goes cheap, a bulk buyer gets a better rate. This is where that happens.
+// -------------------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditCartLineSheet(
+    item: CartItem,
+    canChangePrice: Boolean,
+    onQuantity: (Double) -> Unit,
+    onPrice: (Double) -> Unit,
+    onDiscount: (Double) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var qty by remember(item) { mutableStateOf(item.quantity) }
+    var priceText by remember(item) { mutableStateOf(item.unitPrice.trimZeros()) }
+    var discountText by remember(item) {
+        mutableStateOf(if (item.discount > 0) item.discount.trimZeros() else "")
+    }
+
+    val price = priceText.toDoubleOrNull() ?: item.unitPrice
+    val discount = discountText.toDoubleOrNull() ?: 0.0
+    val lineTotal = ((price * qty) - discount).coerceAtLeast(0.0)
+    val below = price < item.listPrice - 0.001
+    val above = price > item.listPrice + 0.001
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LightSurface) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            Text(item.name, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+            Text(
+                "Normal price ${CurrencyUtils.formatLkr(item.listPrice)}",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 2.dp, bottom = 18.dp)
+            )
+
+            // Quantity
+            Text("How many", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FilledTonalIconButton(
+                    onClick = { if (qty > 1) qty -= 1.0 },
+                    modifier = Modifier.size(52.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = LightSurfaceVariant)
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Less", tint = TextPrimary)
+                }
+                Text(
+                    qty.trimZeros(),
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .widthIn(min = 100.dp)
+                        .testTag("edit_qty")
+                )
+                FilledTonalIconButton(
+                    onClick = { qty += 1.0 },
+                    modifier = Modifier.size(52.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandMintSurface)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "More", tint = BrandTealPrimary)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Price for this sale
+            if (canChangePrice) {
+                Text(
+                    "Selling price for one",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it.filter { c -> c.isDigit() || c == '.' } },
+                    leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, color = TextSecondary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_price"),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+                )
+
+                if (below || above) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (below) StatusAmberBg else StatusGreenBg,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (below) {
+                                "Selling ${CurrencyUtils.formatLkr(item.listPrice - price)} cheaper than normal"
+                            } else {
+                                "Selling ${CurrencyUtils.formatLkr(price - item.listPrice)} above normal"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (below) StatusAmber else StatusGreen,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { priceText = item.listPrice.trimZeros() }) {
+                        Text("Normal price", fontSize = 12.sp)
+                    }
+                    listOf(5, 10).forEach { pct ->
+                        TextButton(onClick = {
+                            priceText = (item.listPrice * (100 - pct) / 100.0).trimZeros()
+                        }) {
+                            Text("-$pct%", fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            // Line discount
+            Text("Take off an amount", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = discountText,
+                onValueChange = { discountText = it.filter { c -> c.isDigit() || c == '.' } },
+                placeholder = { Text("0") },
+                leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, color = TextSecondary) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandTealPrimary)
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = BrandMintSurface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Line total", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(
+                        CurrencyUtils.formatLkr(lineTotal),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = BrandTealPrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Button(
+                onClick = {
+                    if (canChangePrice && kotlin.math.abs(price - item.unitPrice) > 0.001) {
+                        onPrice(price)
+                    }
+                    if (qty != item.quantity) onQuantity(qty)
+                    if (discount != item.discount) onDiscount(discount)
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("save_cart_line")
+            ) {
+                Text("Save", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+
+            TextButton(
+                onClick = { onRemove(); onDismiss() },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text("Remove from bill", color = StatusRed, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+/** 12.0 -> "12", 12.50 -> "12.5". Nobody wants to read trailing zeroes. */
+private fun Double.trimZeros(): String =
+    if (this % 1.0 == 0.0) toLong().toString() else "%.2f".format(this).trimEnd('0').trimEnd('.')

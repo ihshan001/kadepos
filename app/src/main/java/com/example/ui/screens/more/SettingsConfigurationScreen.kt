@@ -1,5 +1,8 @@
 package com.example.ui.screens.more
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -104,6 +107,8 @@ fun SettingsConfigurationScreen(
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = {

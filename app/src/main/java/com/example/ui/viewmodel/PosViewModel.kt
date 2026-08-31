@@ -40,7 +40,10 @@ import kotlinx.coroutines.launch
 data class CartItem(
     val productId: Long? = null,
     val name: String,
-    val unitPrice: Double,
+    /** What this line is actually being sold at. Editable: retail haggling is normal. */
+    var unitPrice: Double,
+    /** The catalogue price, kept so the receipt and reports can show a markdown. */
+    val listPrice: Double = unitPrice,
     val costPrice: Double = 0.0,
     var quantity: Double = 1.0,
     var discount: Double = 0.0,
@@ -49,6 +52,14 @@ data class CartItem(
 ) {
     val lineTotal: Double
         get() = ((unitPrice * quantity) - discount).coerceAtLeast(0.0)
+
+    /** True when the cashier sold this below the normal price. */
+    val isPriceChanged: Boolean
+        get() = kotlin.math.abs(unitPrice - listPrice) > 0.001
+
+    /** Negative when sold cheaper than the list price. */
+    val priceDifference: Double
+        get() = unitPrice - listPrice
 }
 
 enum class PosTab(val title: String) {
@@ -427,6 +438,25 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 list[index] = list[index].copy(quantity = newQty)
             }
             _cart.value = list
+        }
+    }
+
+    /**
+     * Sell this line at a different price. Common in retail: a regular customer
+     * haggles, a damaged item goes cheap, a wholesale buyer gets a better rate.
+     * Gated on CHANGE_PRICE so a cashier cannot quietly undercut the shop.
+     */
+    fun updateCartItemPrice(index: Int, newPrice: Double) {
+        if (newPrice < 0.0) {
+            showMessage("Price cannot be less than zero")
+            return
+        }
+        requirePermission(Permission.CHANGE_PRICE) {
+            val items = _cart.value.toMutableList()
+            if (index in items.indices) {
+                items[index] = items[index].copy(unitPrice = newPrice)
+                _cart.value = items
+            }
         }
     }
 
@@ -1162,7 +1192,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 cashier = sale.cashierName,
                 customerName = sale.customerName,
                 items = items.map {
-                    PrinterService.ReceiptLine(it.productName, it.quantity, it.lineTotal)
+                    PrinterService.ReceiptLine(it.productName, it.quantity, it.unitPrice, it.lineTotal)
                 },
                 subtotal = sale.subtotal,
                 discount = sale.discountAmount,

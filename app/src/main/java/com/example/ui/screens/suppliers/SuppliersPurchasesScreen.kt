@@ -2,6 +2,9 @@ package com.example.ui.screens.suppliers
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -76,6 +79,8 @@ fun SuppliersPurchasesScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         containerColor = LightBackground,
         topBar = {
             TopAppBar(

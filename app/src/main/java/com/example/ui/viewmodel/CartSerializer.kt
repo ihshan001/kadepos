@@ -24,6 +24,7 @@ object CartSerializer {
                     put("productId", item.productId ?: JSONObject.NULL)
                     put("name", item.name)
                     put("unitPrice", item.unitPrice)
+                    put("listPrice", item.listPrice)
                     put("costPrice", item.costPrice)
                     put("quantity", item.quantity)
                     put("discount", item.discount)
@@ -50,6 +51,9 @@ object CartSerializer {
                     productId = if (obj.isNull("productId")) null else obj.optLong("productId"),
                     name = obj.optString("name", "Item"),
                     unitPrice = obj.optDouble("unitPrice", 0.0),
+                    // Older parked bills have no listPrice: fall back to the
+                    // sold price so they simply look "unchanged".
+                    listPrice = obj.optDouble("listPrice", obj.optDouble("unitPrice", 0.0)),
                     costPrice = obj.optDouble("costPrice", 0.0),
                     quantity = obj.optDouble("quantity", 1.0),
                     discount = obj.optDouble("discount", 0.0),

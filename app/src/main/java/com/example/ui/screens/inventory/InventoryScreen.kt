@@ -1,5 +1,8 @@
 package com.example.ui.screens.inventory
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -81,6 +84,8 @@ fun InventoryScreen(viewModel: PosViewModel) {
     val needsAttention = outOfStock.size + runningLow.size
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         containerColor = LightBackground,
         topBar = {
             TopAppBar(

@@ -443,7 +443,16 @@ class PrinterService(private val context: Context) {
         return printRaw(bytes)
     }
 
-    data class ReceiptLine(val name: String, val qty: Double, val lineTotal: Double)
+    /**
+     * One printed bill line. [unitPrice] is the price this item actually sold
+     * at, which may differ from the catalogue price if the cashier changed it.
+     */
+    data class ReceiptLine(
+        val name: String,
+        val qty: Double,
+        val unitPrice: Double,
+        val lineTotal: Double
+    )
 
     @Suppress("LongParameterList")
     suspend fun printReceipt(
@@ -492,14 +501,31 @@ class PrinterService(private val context: Context) {
             builder.textLine("Customer: $customerName")
         }
         builder.textLine("-".repeat(cols))
+            .twoColumn("QTY x RATE", "AMOUNT", cols)
+            .textLine("-".repeat(cols))
 
+        var totalUnits = 0.0
         for (item in items) {
-            val qtyStr = if (item.qty % 1.0 == 0.0) item.qty.toInt().toString() else "%.2f".format(item.qty)
+            totalUnits += item.qty
+            val qtyStr = if (item.qty % 1.0 == 0.0) {
+                item.qty.toInt().toString()
+            } else {
+                "%.2f".format(item.qty).trimEnd('0').trimEnd('.')
+            }
+            // Name on its own line so long product names stay readable,
+            // then an explicit "qty x rate .......... amount" line.
             builder.textLine(item.name.take(cols))
-            builder.twoColumn("  x $qtyStr", money(item.lineTotal), cols)
+            builder.twoColumn("  $qtyStr x ${money(item.unitPrice)}", money(item.lineTotal), cols)
         }
 
+        val unitsStr = if (totalUnits % 1.0 == 0.0) {
+            totalUnits.toInt().toString()
+        } else {
+            "%.2f".format(totalUnits).trimEnd('0').trimEnd('.')
+        }
         builder.textLine("-".repeat(cols))
+            .twoColumn("Items: ${items.size}", "Qty: $unitsStr", cols)
+            .textLine("-".repeat(cols))
             .twoColumn("Subtotal", money(subtotal), cols)
         if (discount > 0) builder.twoColumn("Discount", "-" + money(discount), cols)
         if (tax > 0) builder.twoColumn("Tax", money(tax), cols)

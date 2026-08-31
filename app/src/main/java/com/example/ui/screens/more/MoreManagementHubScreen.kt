@@ -1,5 +1,8 @@
 package com.example.ui.screens.more
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -99,6 +102,8 @@ fun HubMenuScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("More", fontWeight = FontWeight.Bold) },
@@ -348,6 +353,8 @@ fun ReportsScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Reports & Analytics", fontWeight = FontWeight.Bold) },
@@ -448,6 +455,8 @@ fun SuppliersScreen(
     var supplierToPay by remember { mutableStateOf<SupplierEntity?>(null) }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Suppliers & Purchases", fontWeight = FontWeight.Bold) },
@@ -707,6 +716,8 @@ fun CashRegisterScreen(
     var movementType by remember { mutableStateOf("CASH_IN") }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Cash Drawer & Register", fontWeight = FontWeight.Bold) },
@@ -872,6 +883,8 @@ fun StaffScreen(
     val profile by viewModel.profile.collectAsState()
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Staff & Cashiers", fontWeight = FontWeight.Bold) },
@@ -948,6 +961,8 @@ fun SettingsScreen(
     var printerWidth by remember { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.Bold) },
@@ -1095,6 +1110,8 @@ fun ActivityLogScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Activity log", fontWeight = FontWeight.Bold) },
