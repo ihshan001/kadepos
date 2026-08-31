@@ -820,7 +820,7 @@ fun SettingsConfigurationScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
-                                    templateLauncher.launch("kadepos-products-template.csv")
+                                    templateLauncher.launch("arro-pos-products-template.csv")
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).testTag("download_products_template")
@@ -831,7 +831,7 @@ fun SettingsConfigurationScreen(
                             }
                             OutlinedButton(
                                 onClick = {
-                                    exportLauncher.launch("kadepos-products.csv")
+                                    exportLauncher.launch("arro-pos-products.csv")
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).testTag("export_products_csv")

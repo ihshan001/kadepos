@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,7 +22,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.example.data.cloud.CloudSettings
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
@@ -42,8 +48,13 @@ fun CloudBackupScreen(
 ) {
     val settings by viewModel.cloudSettings.collectAsState()
     val cloud = settings ?: CloudSettings()
+    val context = LocalContext.current
     var showAccountDialog by remember { mutableStateOf(false) }
-    var showProviderGate by remember { mutableStateOf(false) }
+    val accountsPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { showAccountDialog = true }
+
+    LaunchedEffect(Unit) { viewModel.refreshCloud() }
 
     Scaffold(
         topBar = {
@@ -108,7 +119,17 @@ fun CloudBackupScreen(
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                             OutlinedButton(
-                                onClick = { showAccountDialog = true },
+                                onClick = {
+                                    val granted = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.GET_ACCOUNTS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (granted) {
+                                        showAccountDialog = true
+                                    } else {
+                                        accountsPermission.launch(Manifest.permission.GET_ACCOUNTS)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.AccountCircle, contentDescription = null, Modifier.size(16.dp))
@@ -192,12 +213,6 @@ fun CloudBackupScreen(
         )
     }
 
-    if (showProviderGate) {
-        ProviderCloudScreen(
-            viewModel = viewModel,
-            onDismiss = { showProviderGate = false }
-        )
-    }
 }
 
 @Composable
@@ -391,7 +406,7 @@ fun ProviderCloudScreen(
                     OutlinedTextField(
                         value = accessCode,
                         onValueChange = { accessCode = it },
-                        label = { Text("Change access code (optional)") },
+                        label = { Text("Access code (required on first setup)") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -427,14 +442,14 @@ fun ProviderCloudScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = {
-                            viewModel.saveProviderCloud(
+                            val saved = viewModel.saveProviderCloud(
                                 enabled = enabled,
                                 providerEmail = providerEmail.trim(),
                                 hourlySync = hourly,
                                 dailyBackup = daily,
                                 accessCode = accessCode.trim()
                             )
-                            onDismiss()
+                            if (saved) onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)

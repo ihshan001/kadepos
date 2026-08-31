@@ -1,4 +1,4 @@
-# KadePOS — Self-Hosted Sync, Cloud Availability & Notifications
+# Arro-POS — Self-Hosted Sync, Cloud Availability & Notifications
 
 **Status: planning document. Nothing described here is built yet.**
 This is the brief for a future phase. The app today is single-device and
@@ -17,7 +17,7 @@ an AI agent. It is meant to be handed over whole as a master prompt.
 
 ## 0. Context you must not lose
 
-KadePOS is an Android point-of-sale app for small Sri Lankan shops — groceries,
+Arro-POS is an Android point-of-sale app for small Sri Lankan shops — groceries,
 pharmacies, salons, hardware stores, repair counters. It is built around one
 sentence: **Open → Sell → Pay → Print.**
 
@@ -700,7 +700,7 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 
 ## 13. Prompt to hand to an implementer
 
-> You are extending KadePOS, an offline-first Android POS built with Kotlin,
+> You are extending Arro-POS, an offline-first Android POS built with Kotlin,
 > Jetpack Compose and Room, for small Sri Lankan shops.
 >
 > Implement cross-device sync per `docs/CLOUD_SYNC_MASTER_PROMPT.md`, starting

@@ -23,7 +23,7 @@ import com.example.ui.util.CurrencyUtils
 import kotlin.math.roundToLong
 
 /**
- * The one way money is entered anywhere in KadePOS.
+ * The one way money is entered anywhere in Arro-POS.
  *
  * Settling a customer's credit, paying a supplier, recording an expense and
  * receiving stock are all the same action to a shop owner: type a number and

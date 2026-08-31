@@ -29,7 +29,7 @@ private val KadeColorScheme = lightColorScheme(
 )
 
 /**
- * KadePOS theme. Deliberately light-only: shopkeepers use the app in bright
+ * Arro-POS theme. Deliberately light-only: shopkeepers use the app in bright
  * daylight and under shop lighting, and a single scheme keeps every screen
  * predictable.
  */

@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,7 +19,7 @@ import java.util.concurrent.TimeUnit
  * Minimal Google Drive REST transport.
  *
  * Uses the account already present on the device (normally the owner's Gmail).
- * The first slice keeps a per-device folder: "kadepos-device/<deviceName>" so
+ * The first slice keeps a per-device folder: "arro-pos-device/<deviceName>" so
  * two phones signing in with the same Google account do not overwrite each
  * other.
  *
@@ -54,7 +55,7 @@ class GoogleDriveCloudTransport(private val context: Context) {
     }
 
     suspend fun ensureDeviceFolder(token: String, deviceName: String): String = withContext(Dispatchers.IO) {
-        val safeName = "kadepos-device-${deviceName.ifBlank { "unknown" }}".replace(
+        val safeName = "arro-pos-device-${deviceName.ifBlank { "unknown" }}".replace(
             Regex("[^A-Za-z0-9._-]"), "-"
         )
         val existing = queryFolder(token, safeName)
@@ -77,7 +78,7 @@ class GoogleDriveCloudTransport(private val context: Context) {
             val body = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("metadata", metadata)
-                .addFormDataPart("media", file.name, file.inputStream().readBytes().toRequestBody(octet))
+                .addFormDataPart("media", file.name, file.asRequestBody(octet))
                 .build()
             val request = Request.Builder()
                 .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")

@@ -2069,14 +2069,20 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     // Cloud backup / Google Drive (per-device, provider-controlled)
     // -----------------------------------------------------------------------
 
-    /** Re-reads the provider policy and keeps the hourly worker in step. */
+    /** Re-reads the provider policy and keeps the hourly/daily workers in step. */
     fun refreshCloud() {
         val settings = cloudRepo.load()
         _cloudSettings.value = settings
-        if (settings.providerEnabled && settings.hourlySyncEnabled) {
-            CloudSyncScheduler.schedule(application)
-        } else if (!settings.providerEnabled) {
+        if (!settings.providerEnabled) {
             CloudSyncScheduler.cancel(application)
+            return
+        }
+        CloudSyncScheduler.cancel(application)
+        if (settings.hourlySyncEnabled) {
+            CloudSyncScheduler.schedule(application)
+        }
+        if (settings.dailyBackupEnabled) {
+            CloudSyncScheduler.scheduleDailyBackup(application)
         }
     }
 
@@ -2133,18 +2139,30 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         audit("SETTINGS", "Connected Google account ${clean.take(6)}… for backup", 0.0)
     }
 
-    /** Providers only. Writes the master policy/access code. */
+    /** Providers only. Writes the master policy/access code. Returns false when required provider info is missing. */
     fun saveProviderCloud(
         enabled: Boolean,
         providerEmail: String,
         hourlySync: Boolean,
         dailyBackup: Boolean,
         accessCode: String
-    ) {
+    ): Boolean {
+        val cleanEmail = providerEmail.trim()
+        val current = cloudRepo.load()
+        if (enabled) {
+            if (cleanEmail.isBlank()) {
+                showMessage("Set the provider Gmail before activating cloud backup")
+                return false
+            }
+            if (current.providerAccessCodeHash.isBlank() && accessCode.isBlank()) {
+                showMessage("Set a provider access code before activating cloud backup")
+                return false
+            }
+        }
         val updated = cloudRepo.update {
             it.copy(
                 providerEnabled = enabled,
-                providerEmail = providerEmail.trim(),
+                providerEmail = cleanEmail,
                 hourlySyncEnabled = hourlySync,
                 dailyBackupEnabled = dailyBackup
             )
@@ -2153,13 +2171,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             cloudRepo.setProviderCode(accessCode)
         }
         _cloudSettings.value = cloudRepo.load()
-        if (enabled && hourlySync) {
-            CloudSyncScheduler.schedule(application)
+        if (updated.providerEnabled) {
+            CloudSyncScheduler.cancel(application)
+            if (updated.hourlySyncEnabled) CloudSyncScheduler.schedule(application)
+            if (updated.dailyBackupEnabled) CloudSyncScheduler.scheduleDailyBackup(application)
         } else {
             CloudSyncScheduler.cancel(application)
         }
         showMessage(if (enabled) "Cloud backup activated for this device" else "Cloud backup deactivated")
         audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
+        return true
     }
 
     /** Unlocks the provider screen with the company access code + Gmail. */

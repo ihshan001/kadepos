@@ -1,6 +1,7 @@
 package com.example.data.cloud
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -29,12 +30,29 @@ class CloudBackupManager(private val context: Context) {
         val message: String
     )
 
+    /**
+     * Flushes SQLite's WAL into the main database file before copying it. The
+     * app is still running, so this makes the snapshot much closer to a clean
+     * checkpoint than copying the raw files blindly.
+     */
+    private fun checkpointDatabase() {
+        runCatching {
+            val db = SQLiteDatabase.openDatabase(dbPath.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
+            try {
+                db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
+            } finally {
+                db.close()
+            }
+        }
+    }
+
     /** Copies the live Room database plus WAL/SHM into one timestamped zip. */
     @Synchronized
     fun createBackup(deviceName: String): Result {
         return runCatching {
+            checkpointDatabase()
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-            val outFile = File(backupDir, "kadepos-backup-$stamp.zip")
+            val outFile = File(backupDir, "arro-pos-backup-$stamp.zip")
             val sources = listOfNotNull(
                 context.getDatabasePath("kadepos_database").takeIf { it.exists() }
             ) + listOfNotNull(
@@ -49,7 +67,7 @@ class CloudBackupManager(private val context: Context) {
                     zip.closeEntry()
                 }
                 val manifest = JSONObject().apply {
-                    put("app", "KadePOS")
+                    put("app", "Arro-POS")
                     put("deviceName", deviceName)
                     put("createdAt", System.currentTimeMillis())
                     put("database", dbPath.name)

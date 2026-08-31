@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  */
 
 /**
- * v1 -> v2. The rebrand from "The System" to KadePOS.
+ * v1 -> v2. The rebrand from "The System" to Arro-POS.
  *
  * Adds shop-type isolation, real printer hardware fields, the signed-in staff
  * record, and the audit log table. The v1 database also shipped with demo

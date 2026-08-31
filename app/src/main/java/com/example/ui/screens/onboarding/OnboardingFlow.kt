@@ -208,7 +208,7 @@ private fun WelcomeStep(onStart: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                "KadePOS",
+                "Arro-POS",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = TextPrimary

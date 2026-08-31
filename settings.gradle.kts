@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "KadePOS"
+rootProject.name = "Arro-POS"
 
 include(":app")

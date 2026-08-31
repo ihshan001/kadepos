@@ -67,7 +67,7 @@ fun SignInScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             Text(
-                shopName.ifBlank { "KadePOS" },
+                shopName.ifBlank { "Arro-POS" },
                 fontSize = 22.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = TextPrimary,

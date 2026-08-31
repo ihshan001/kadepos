@@ -346,7 +346,7 @@ private fun BluetoothSection(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (!hasPermission) {
             HintCard(
-                text = "KadePOS needs permission to use Bluetooth so it can talk to your printer.",
+                text = "Arro-POS needs permission to use Bluetooth so it can talk to your printer.",
                 tone = HintTone.WARN
             )
             PrimaryActionButton(
