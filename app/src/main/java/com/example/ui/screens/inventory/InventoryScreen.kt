@@ -61,6 +61,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
     }
 
     val products by viewModel.products.collectAsState()
+    val stockMovements by viewModel.stockMovements.collectAsState()
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(StockFilter.NEEDS_ATTENTION) }
     var receiving by remember { mutableStateOf<ProductEntity?>(null) }
@@ -185,6 +186,47 @@ fun InventoryScreen(viewModel: PosViewModel) {
                                 maxLines = 1,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
                             )
+                        }
+                    }
+                }
+            }
+
+            val recentStock = remember(stockMovements) {
+                stockMovements
+                    .filter { it.type == "PURCHASE" || it.type == "INITIAL" || it.type.startsWith("ADJUST_") }
+                    .take(6)
+            }
+            if (recentStock.isNotEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = LightSurface),
+                        border = BorderStroke(1.dp, LightBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("Recently stocked", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            recentStock.forEach { movement ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(movement.productName, fontSize = 12.sp, color = TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+                                    Text(
+                                        CurrencyUtils.formatDateOnly(movement.timestamp),
+                                        fontSize = 10.sp,
+                                        color = TextMuted,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    Text(
+                                        "+${movement.changeQty.clean()}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusGreen
+                                    )
+                                }
+                            }
                         }
                     }
                 }

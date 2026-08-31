@@ -63,6 +63,24 @@ data class ProductEntity(
     val sku: String = "",
     val category: String = "General",
     /**
+     * A deeper level under the category. The UI stores it as a path with ">"
+     * separators (e.g. "Food > Rice dishes > Biriyani") so a shop is never
+     * limited to one flat list. The shell just needs to know how deep the
+     * customer can drill down; the separator lives in the data.
+     */
+    val subCategory: String = "",
+    /**
+     * Optional built-in options, one per line. A line can be just a variant
+     * name ("Regular", "Full") or "Name|price" when the variant costs more or
+     * less ("Full|750"). The owner creates a real product line for each option
+     * from the Add product screen so it can still hold its own stock and price.
+     */
+    val variants: String = "",
+    /** For a line that was created from a variant, the parent product id. */
+    val parentProductId: Long = 0L,
+    /** True on the small rows generated from the parent's [variants]. */
+    val isVariant: Boolean = false,
+    /**
      * The shop type this product belongs to (GROCERY, PHARMACY, ...).
      * Products are always filtered by the active shop type so one business
      * never sees another business type's catalogue.

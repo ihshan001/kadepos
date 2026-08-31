@@ -239,12 +239,16 @@ fun SuppliersPurchasesScreen(
             onPay = { payingSupplier = live; openSupplier = null },
             onNewBill = { billFor = live; openSupplier = null },
             onCall = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_DIAL, Uri.parse("tel:${live.phone}"))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }.onFailure { viewModel.showMessage("Could not open the dialler") }
+                if (live.phone.isBlank()) {
+                    viewModel.showMessage("No phone saved for ${live.name}")
+                } else {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_DIAL, Uri.parse("tel:${live.phone}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }.onFailure { viewModel.showMessage("Could not open the dialler") }
+                }
             },
             onDelete = {
                 viewModel.deleteSupplier(live.id)

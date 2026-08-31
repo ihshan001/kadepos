@@ -1109,7 +1109,6 @@ fun CashMovementDialog(
 // -------------------------------------------------------------------------------------
 // Staff Screen
 // -------------------------------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
 // ---------------------------------------------------------------------------
 // Team. Who works here, what each person is allowed to touch, and who is at
 // the till right now. Only reachable with MANAGE_STAFF.
@@ -1204,10 +1203,7 @@ fun StaffScreen(
                 // Without this the hub card is a dead end: it tells a solo owner
                 // to add staff and then offers no way to do it.
                 Button(
-                    onClick = {
-                        val current = profile ?: BusinessProfileEntity()
-                        viewModel.saveBusinessProfile(current.copy(staffEnabled = true))
-                    },
+                    onClick = { viewModel.enableTeamForOwner() },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
                 ) {
@@ -1235,6 +1231,22 @@ fun StaffScreen(
                 )
             }
 
+            if (staffList.none { it.role.equals("Owner", ignoreCase = true) }) {
+                item {
+                    com.example.ui.components.HintCard(
+                        text = "No Owner role exists yet. Add the person who owns the shop as Owner " +
+                            "so you can always get back into a team shop."
+                    )
+                }
+            } else if (staffList.none { it.role.equals("Owner", ignoreCase = true) && it.pin.isNotBlank() }) {
+                item {
+                    com.example.ui.components.HintCard(
+                        text = "Set a PIN on your Owner card before signing out. Without an Owner PIN, " +
+                            "the app cannot let you back in if someone else signs out first."
+                    )
+                }
+            }
+
             if (staffList.isEmpty()) {
                 item {
                     com.example.ui.components.HintCard(
@@ -1254,15 +1266,22 @@ fun StaffScreen(
                     isAtTill = isAtTill,
                     onEdit = { editing = staff },
                     onPermissions = { permissionsFor = staff },
-                    onToggleActive = { viewModel.setStaffActive(staff, !staff.isActive) }
+                    onToggleActive = { viewModel.setStaffActive(staff, !staff.isActive) },
+                    onUseAtTill = { viewModel.switchActiveStaff(staff) }
                 )
             }
         }
     }
 
     if (addingNew || editing != null) {
+        val defaultNewRole = if (staffList.any { it.role.equals("Owner", ignoreCase = true) }) {
+            StaffRole.CASHIER
+        } else {
+            StaffRole.OWNER
+        }
         StaffEditorDialog(
             existing = editing,
+            defaultRole = defaultNewRole,
             onSave = { name, phone, role, pin, active ->
                 viewModel.saveStaff(
                     id = editing?.id ?: 0L,
@@ -1298,7 +1317,8 @@ private fun StaffCard(
     isAtTill: Boolean,
     onEdit: () -> Unit,
     onPermissions: () -> Unit,
-    onToggleActive: () -> Unit
+    onToggleActive: () -> Unit,
+    onUseAtTill: () -> Unit
 ) {
     val role = StaffRole.fromName(staff.role)
     Card(
@@ -1380,6 +1400,14 @@ private fun StaffCard(
                 ) {
                     Text("Edit", fontSize = 12.sp)
                 }
+                if (!isAtTill) {
+                    OutlinedButton(
+                        onClick = onUseAtTill,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("At till", fontSize = 12.sp)
+                    }
+                }
                 TextButton(onClick = onToggleActive) {
                     Text(
                         if (staff.isActive) "Pause" else "Restore",
@@ -1396,12 +1424,13 @@ private fun StaffCard(
 @Composable
 private fun StaffEditorDialog(
     existing: StaffEntity?,
+    defaultRole: StaffRole = StaffRole.CASHIER,
     onSave: (String, String, String, String, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
-    var role by remember { mutableStateOf(StaffRole.fromName(existing?.role)) }
+    var role by remember { mutableStateOf(existing?.let { StaffRole.fromName(it.role) } ?: defaultRole) }
     var pin by remember { mutableStateOf("") }
     var active by remember { mutableStateOf(existing?.isActive ?: true) }
 

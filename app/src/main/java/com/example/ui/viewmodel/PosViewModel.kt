@@ -24,6 +24,7 @@ import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.NotificationType
 import com.example.data.model.Permission
 import com.example.data.model.PermissionOverrides
+import com.example.data.model.VariantCatalog
 import com.example.data.model.PermissionSet
 import com.example.data.model.StaffRole
 import com.example.data.repository.PosRepository
@@ -277,6 +278,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 // Solo shop: the owner said "it is just me" during setup, so
                 // nothing is ever locked and no PIN is asked for.
                 !prof.staffEnabled -> PermissionSet.soloOwner(prof.name)
+                // Rescue hatch: a freshly converted team shop with nobody's PIN
+                // set yet must not sign everyone out into a locked screen. Let
+                // the owner in so they can set a PIN on someone first.
+                staff.none { it.isActive && it.pin.isNotBlank() } ->
+                    PermissionSet.soloOwner(prof.activeStaffName.ifBlank { prof.name })
                 else -> {
                     val member = staff.firstOrNull { it.id == signedId }
                     if (member == null) {
@@ -473,6 +479,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signOut() {
+        // The owner must always be able to get back into the shop. This is what
+        // stops the solo-onboarding trap: a cashier could otherwise be the only
+        // PIN holder, sign out, and lock the real owner out of the till.
+        val ownerCanOpen = staffList.value.any {
+            it.isActive && it.role.equals("Owner", ignoreCase = true) && it.pin.isNotBlank()
+        }
+        if (!ownerCanOpen) {
+            showMessage("Set a PIN on your owner card before signing out.")
+            return
+        }
         val who = permissions.value
         _signedInStaffId.value = null
         _selectedTab.value = PosTab.SELL
@@ -651,6 +667,19 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         val subtotal = cartItems.sumOf { it.lineTotal }
         val finalTotal = (subtotal - _billDiscount.value).coerceAtLeast(0.0)
         val changeGiven = if (paymentMethod == "CASH") (cashReceived - finalTotal).coerceAtLeast(0.0) else 0.0
+
+        // A bill of Rs. 20 can never be completed with Rs. 10. Enforced here as
+        // well as in checkout, so a shortcut can't bypass the split rule.
+        if (paymentMethod == "CASH" && cashReceived < finalTotal - 0.001) {
+            showMessage("Cash received is less than the bill. Split the remaining amount on card or as credit.")
+            return
+        }
+        if ((paymentMethod == "CREDIT" || (paymentMethod == "SPLIT" && creditAmount > 0.0)) &&
+            _selectedCustomer.value == null
+        ) {
+            showMessage("Choose or create a customer before saving a credit sale.")
+            return
+        }
 
         val customer = _selectedCustomer.value
         val cashier = profile.value?.activeStaffName ?: "Staff"
@@ -898,10 +927,15 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         openingStock: Double,
         lowStock: Double,
         isTracked: Boolean,
-        isFavourite: Boolean
+        isFavourite: Boolean,
+        subCategory: String = "",
+        variants: String = ""
     ) {
         if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
+            val rawVariants = variants.trim()
+            val combos = VariantCatalog.buildCombinations(rawVariants, sellingPrice)
+
             if (id > 0) {
                 val existing = repository.getProductById(id)
                 if (existing != null) {
@@ -913,21 +947,26 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                             amount = sellingPrice
                         )
                     }
-                    repository.updateProduct(
-                        existing.copy(
-                            name = name,
-                            sellingPrice = sellingPrice,
-                            costPrice = costPrice,
-                            barcode = barcode,
-                            sku = sku,
-                            category = category,
-                            unit = unit,
-                            lowStockThreshold = lowStock,
-                            isTracked = isTracked,
-                            isFavourite = isFavourite,
-                            updatedAt = System.currentTimeMillis()
-                        )
+                    val updated = existing.copy(
+                        name = name,
+                        sellingPrice = sellingPrice,
+                        costPrice = costPrice,
+                        barcode = barcode,
+                        sku = sku,
+                        category = category,
+                        subCategory = subCategory,
+                        variants = rawVariants,
+                        unit = unit,
+                        lowStockThreshold = lowStock,
+                        isTracked = isTracked,
+                        isFavourite = isFavourite,
+                        updatedAt = System.currentTimeMillis()
                     )
+                    repository.updateProduct(updated)
+                    // Rewrite the child lines while keeping their stock history.
+                    // Options removed from the parent are archived, not deleted.
+                    reconcileVariantChildren(id, updated, combos)
+
                     // Changing the stock figure here is a recount, so it goes
                     // through the ledger like any other correction rather than
                     // overwriting the total behind its back.
@@ -942,27 +981,105 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     showMessage("Updated $name")
                 }
             } else {
-                val newProd = ProductEntity(
+                val shopType = profile.value?.shopTypeKey.orEmpty()
+                val parent = ProductEntity(
                     name = name,
                     sellingPrice = sellingPrice,
                     costPrice = costPrice,
                     barcode = barcode,
                     sku = sku,
                     category = category,
+                    subCategory = subCategory,
+                    variants = rawVariants,
                     // New products join the shop type the business is set up for,
                     // so they show up alongside the right catalogue.
-                    shopType = profile.value?.shopTypeKey.orEmpty(),
+                    shopType = shopType,
                     unit = unit,
                     currentStock = openingStock,
                     lowStockThreshold = lowStock,
                     isTracked = isTracked,
                     isFavourite = isFavourite
                 )
-                repository.insertProductWithOpeningStock(newProd)
+                val parentId = repository.insertProductWithOpeningStock(parent)
+
+                // Every simple option or nested combination becomes its own
+                // purchasable line. Deep rules like "Rice: Basmati|Keeri" +
+                // "Portion: Regular|Full" create the 4 lines automatically.
+                if (combos.isNotEmpty()) {
+                    combos.forEach { combo ->
+                        val child = parent.copy(
+                            id = 0L,
+                            name = VariantCatalog.childName(name, combo),
+                            sellingPrice = combo.price,
+                            variants = "",
+                            parentProductId = parentId,
+                            isVariant = true,
+                            // A variant starts at zero so it is stocked
+                            // separately; the parent's opening stock is not
+                            // silently shared across every size/option.
+                            currentStock = 0.0,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        repository.insertProductWithOpeningStock(child)
+                    }
+                    showMessage("Added $name and ${combos.size} option(s)")
+                } else {
+                    showMessage("Added $name")
+                }
                 audit("PRODUCT_ADDED", "Added product $name", sellingPrice)
-                showMessage("Added $name")
             }
         }
+    }
+
+    /**
+     * Keeps a parent's generated child rows in step with its current variant
+     * definitions. New options become stockable lines, existing ones keep their
+     * ledger, and removed ones are archived rather than deleted.
+     */
+    private suspend fun reconcileVariantChildren(
+        parentId: Long,
+        parent: ProductEntity,
+        combos: List<com.example.data.model.VariantCombination>
+    ) {
+        val existingChildren = repository.getVariantChildren(parentId)
+        val desiredNames = combos.map { VariantCatalog.childName(parent.name, it) }.toSet()
+
+        combos.forEach { combo ->
+            val name = VariantCatalog.childName(parent.name, combo)
+            val existing = existingChildren.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            if (existing != null) {
+                repository.updateProduct(
+                    existing.copy(
+                        name = name,
+                        sellingPrice = combo.price,
+                        category = parent.category,
+                        subCategory = parent.subCategory,
+                        shopType = parent.shopType,
+                        unit = parent.unit,
+                        lowStockThreshold = parent.lowStockThreshold,
+                        isTracked = parent.isTracked,
+                        variants = ""
+                    )
+                )
+            } else {
+                val child = parent.copy(
+                    id = 0L,
+                    name = name,
+                    sellingPrice = combo.price,
+                    variants = "",
+                    parentProductId = parentId,
+                    isVariant = true,
+                    currentStock = 0.0,
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.insertProductWithOpeningStock(child)
+            }
+        }
+
+        // Anything left over no longer belongs to the current options.
+        existingChildren
+            .filter { it.name.lowercase() !in desiredNames.map { d -> d.lowercase() } }
+            .forEach { repository.archiveProduct(it.id) }
     }
 
     fun archiveProduct(productId: Long) {
@@ -1055,12 +1172,29 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         notes: String
     ) {
         if (!allow(Permission.MANAGE_SUPPLIERS)) return
+        if (name.isBlank()) {
+            showMessage("Enter a supplier name")
+            return
+        }
         viewModelScope.launch {
-            if (id > 0) {
-                val existing = suppliers.value.find { it.id == id }
-                if (existing != null) {
-                    repository.updateSupplier(
-                        existing.copy(
+            runCatching {
+                if (id > 0) {
+                    val existing = suppliers.value.find { it.id == id }
+                    if (existing != null) {
+                        repository.updateSupplier(
+                            existing.copy(
+                                name = name,
+                                contactPerson = contactPerson,
+                                phone = phone,
+                                email = email,
+                                address = address,
+                                notes = notes
+                            )
+                        )
+                    }
+                } else {
+                    repository.insertSupplier(
+                        SupplierEntity(
                             name = name,
                             contactPerson = contactPerson,
                             phone = phone,
@@ -1069,20 +1203,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                             notes = notes
                         )
                     )
-                    showMessage("Updated supplier $name")
                 }
-            } else {
-                repository.insertSupplier(
-                    SupplierEntity(
-                        name = name,
-                        contactPerson = contactPerson,
-                        phone = phone,
-                        email = email,
-                        address = address,
-                        notes = notes
-                    )
-                )
-                showMessage("Added supplier $name")
+            }.onSuccess {
+                showMessage(if (id > 0) "Updated supplier $name" else "Added supplier $name")
+                audit("SUPPLIER", if (id > 0) "Updated supplier $name" else "Added supplier $name")
+            }.onFailure {
+                showMessage("Could not save the supplier. Please try again.")
             }
         }
     }
@@ -1187,19 +1313,24 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 itemsCount = 0,
                 notes = notes
             )
-            repository.insertPurchase(purchase, emptyList())
-            audit(
-                action = "PURCHASE",
-                description = "Bill from ${purchase.supplierName} for ${CurrencyUtils.formatLkr(totalAmount)}",
-                amount = totalAmount
-            )
-            showMessage(
-                if (due > 0) {
-                    "Saved. You still owe ${CurrencyUtils.formatLkr(due)}."
-                } else {
-                    "Saved and fully paid."
-                }
-            )
+            runCatching {
+                repository.insertPurchase(purchase, emptyList())
+            }.onSuccess {
+                audit(
+                    action = "PURCHASE",
+                    description = "Bill from ${purchase.supplierName} for ${CurrencyUtils.formatLkr(totalAmount)}",
+                    amount = totalAmount
+                )
+                showMessage(
+                    if (due > 0) {
+                        "Saved. You still owe ${CurrencyUtils.formatLkr(due)}."
+                    } else {
+                        "Saved and fully paid."
+                    }
+                )
+            }.onFailure {
+                showMessage("Could not save the delivery bill. Please try again.")
+            }
         }
     }
 
@@ -1720,7 +1851,38 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun saveBusinessProfile(updated: BusinessProfileEntity) {
         if (!allow(Permission.MANAGE_SETTINGS)) return
         viewModelScope.launch {
-            repository.saveProfile(updated)
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
+            var toSave = updated
+
+            // Turning on team mode from Settings must never leave the owner
+            // behind as a Cashier. If the shop was "Just me" and has no Owner
+            // row yet, create one and put that person at the till.
+            if (updated.staffEnabled && !current.staffEnabled) {
+                val ownerName = updated.activeStaffName
+                    .ifBlank { current.activeStaffName }
+                    .ifBlank { current.name }
+                    .ifBlank { "Owner" }
+                val existingOwner = staffList.value.firstOrNull {
+                    it.role.equals("Owner", ignoreCase = true) &&
+                        it.name.equals(ownerName, ignoreCase = true)
+                } ?: staffList.value.firstOrNull { it.role.equals("Owner", ignoreCase = true) }
+                val ownerId = existingOwner?.id ?: repository.insertStaff(
+                    StaffEntity(
+                        name = ownerName,
+                        role = "Owner",
+                        isActive = true
+                    )
+                )
+                toSave = updated.copy(
+                    staffEnabled = true,
+                    activeStaffId = ownerId,
+                    activeStaffName = ownerName,
+                    activeStaffRole = "Owner"
+                )
+                _signedInStaffId.value = ownerId
+            }
+
+            repository.saveProfile(toSave)
             audit("SETTINGS", "Business details updated")
             showMessage("Saved")
         }
@@ -1786,13 +1948,98 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         _onboardingStep.value = 1
     }
 
+    /**
+     * Turns a solo shop into a team shop without losing the owner. This is the
+     * path behind More → My team → “I have staff now” when the owner chose
+     * “Just me” during setup. It creates an Owner row (if there isn't one yet),
+     * keeps the business owner at the till, and never silently drops them into
+     * a Cashier role.
+     */
+    fun enableTeamForOwner() {
+        viewModelScope.launch {
+            val current = repository.getProfileSync() ?: BusinessProfileEntity()
+            val alreadyHadOwner = current.staffEnabled && staffList.value.any { it.role.equals("Owner", ignoreCase = true) }
+            if (alreadyHadOwner) {
+                showMessage("Team mode is already on")
+                return@launch
+            }
+            val ownerName = current.activeStaffName.ifBlank { current.name }.ifBlank { "Owner" }
+            val existingOwner = staffList.value.firstOrNull {
+                it.role.equals("Owner", ignoreCase = true) && it.name.equals(ownerName, ignoreCase = true)
+            } ?: staffList.value.firstOrNull { it.role.equals("Owner", ignoreCase = true) }
+
+            val ownerId = existingOwner?.id ?: repository.insertStaff(
+                StaffEntity(
+                    name = ownerName,
+                    role = "Owner",
+                    isActive = true
+                )
+            )
+            val saved = current.copy(
+                staffEnabled = true,
+                activeStaffId = ownerId,
+                activeStaffName = ownerName,
+                activeStaffRole = "Owner"
+            )
+            repository.saveProfile(saved)
+            _signedInStaffId.value = ownerId
+            audit("SETTINGS", "Team mode switched on for $ownerName")
+            showMessage("Team mode is on. You are still the owner. Set a PIN on your card before signing out.")
+        }
+    }
+
+    /** Wipes every sale, customer, supplier, product, movement and team row. */
+    fun clearAllBusinessData() {
+        if (!allow(Permission.MANAGE_SETTINGS)) return
+        viewModelScope.launch {
+            repository.clearAllBusinessData()
+            repository.saveProfile(BusinessProfileEntity())
+            _signedInStaffId.value = null
+            _selectedCustomer.value = null
+            _billDiscount.value = 0.0
+            _billNote.value = ""
+            _lastCompletedSale.value = null
+            _lastCompletedItems.value = emptyList()
+            _showSaleSuccessDialog.value = false
+            clearCart()
+            _selectedTab.value = PosTab.SELL
+            _moreDestination.value = null
+            _onboardingStep.value = 1
+            showMessage("All data removed. Let's set the shop up again.")
+        }
+    }
+
+    /** Returns a spreadsheet-ready CSV of the current catalogue. */
+    suspend fun exportProductsCsv(): String = repository.exportProductsCsv()
+
+    /** Imports a CSV exported from Settings into the current catalogue. */
+    fun importProductsFromCsv(raw: String) {
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
+        viewModelScope.launch {
+            val (saved, problems) = repository.importProductsFromCsv(
+                raw = raw,
+                shopType = profile.value?.shopTypeKey.orEmpty()
+            )
+            if (problems.isEmpty()) {
+                showMessage("Imported $saved products")
+            } else {
+                showMessage("Imported $saved products. ${problems.size} row(s) skipped: ${problems.first().take(160)}")
+            }
+            audit("CATALOG", "Imported $saved products from CSV")
+        }
+    }
+
     /** Looks up a scanned or typed barcode inside the active shop's catalogue. */
-    fun addProductByBarcode(barcode: String, onMissing: (String) -> Unit) {
+    fun addProductByBarcode(
+        barcode: String,
+        onFound: (ProductEntity) -> Unit,
+        onMissing: (String) -> Unit
+    ) {
         viewModelScope.launch {
             val shopType = profile.value?.shopTypeKey.orEmpty()
             val match = repository.getProductByBarcode(barcode.trim(), shopType)
             if (match != null) {
-                addToCart(match)
+                onFound(match)
             } else {
                 onMissing(barcode.trim())
             }

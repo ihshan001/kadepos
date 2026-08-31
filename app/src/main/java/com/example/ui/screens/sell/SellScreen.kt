@@ -1,5 +1,6 @@
 package com.example.ui.screens.sell
 
+import android.Manifest
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -7,6 +8,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -28,6 +30,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +66,9 @@ import com.example.data.model.HeldSaleEntity
 import com.example.data.model.ProductEntity
 import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
+import com.example.data.model.VariantCatalog
+import com.example.data.model.VariantCombination
+import com.example.data.model.VariantGroup
 import com.example.ui.components.BatchReorderDialog
 import com.example.ui.components.HintCard
 import com.example.ui.components.HintTone
@@ -68,6 +88,26 @@ private val SCREEN_PADDING = 14.dp
 private const val ALL_CATEGORY = "All"
 private const val FAVOURITES_CATEGORY = "Favourites"
 
+/** Child lines created from a parent's [ProductEntity.variants] by [saveProduct]. */
+private fun variantChildrenOf(products: List<ProductEntity>, parent: ProductEntity): List<ProductEntity> =
+    products.filter { it.parentProductId == parent.id && it.isVariant }
+
+/** A product only opens the variant chooser when it actually has options. */
+private fun hasVariantOptions(products: List<ProductEntity>, product: ProductEntity): Boolean =
+    product.variants.isNotBlank() || variantChildrenOf(products, product).isNotEmpty()
+
+/** Parses parent "Name|price" definitions into quick-pick options. */
+private fun parseVariantOptions(product: ProductEntity): List<Pair<String, Double>> =
+    product.variants
+        .split(Regex("""\n|;"""))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .mapNotNull { line ->
+            val parts = line.split("|").map { it.trim() }
+            val name = parts.getOrNull(0).orEmpty()
+            if (name.isBlank()) null else name to (parts.getOrNull(1)?.toDoubleOrNull() ?: product.sellingPrice)
+        }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SellScreen(
@@ -83,8 +123,10 @@ fun SellScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
     var showBarcodeDialog by remember { mutableStateOf(false) }
-    var showQuickItemDialog by remember { mutableStateOf(false) }
+    var showCameraScannerDialog by remember { mutableStateOf(false) }
     var showQuickSaleDialog by remember { mutableStateOf(false) }
+    var quickPrefillName by remember { mutableStateOf("") }
+    var quickPrefillBarcode by remember { mutableStateOf<String?>(null) }
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showHoldDialog by remember { mutableStateOf(false) }
@@ -93,6 +135,7 @@ fun SellScreen(
     var showShiftOverviewDialog by remember { mutableStateOf(false) }
     var editingCartItemIndex by remember { mutableStateOf<Int?>(null) }
     var unknownBarcode by remember { mutableStateOf<String?>(null) }
+    var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
 
     val permissions by viewModel.permissions.collectAsState()
 
@@ -117,17 +160,21 @@ fun SellScreen(
     val todayOrderCount = todaySalesList.size
 
     // Categories come from the shop's own products only, so a grocery never
-    // sees pharmacy sections. Every one of them is listed — the row scrolls.
+    // sees pharmacy sections. Sub-category paths are listed as their own chips,
+    // allowing deep drill-down (Food > Rice dishes > Biriyani) while the parent
+    // category chip still shows everything underneath it. The row scrolls.
     val categories = remember(products) {
+        val paths = products.mapNotNull { p ->
+            val path = listOf(p.category, p.subCategory)
+                .filter { it.isNotBlank() }
+                .joinToString(" > ")
+            path.ifBlank { null }
+        }
         buildList {
             add(ALL_CATEGORY)
             if (products.any { it.isFavourite }) add(FAVOURITES_CATEGORY)
-            addAll(
-                products.map { it.category.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .sorted()
-            )
+            addAll(products.map { it.category.trim() }.filter { it.isNotBlank() }.distinct().sorted())
+            addAll(paths.filter { it.contains(" > ") }.distinct().sorted())
         }
     }
 
@@ -151,15 +198,45 @@ fun SellScreen(
                 it.name.contains(searchQuery, ignoreCase = true) ||
                         it.barcode.contains(searchQuery, ignoreCase = true) ||
                         it.sku.contains(searchQuery, ignoreCase = true) ||
-                        it.category.contains(searchQuery, ignoreCase = true)
+                        it.category.contains(searchQuery, ignoreCase = true) ||
+                        it.subCategory.contains(searchQuery, ignoreCase = true)
             }
         } else {
             when (selectedCategory) {
                 ALL_CATEGORY -> products
                 FAVOURITES_CATEGORY -> products.filter { it.isFavourite }
-                // Strict match: a category shows its own items and nothing else.
-                else -> products.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+                else -> products.filter { p ->
+                    val path = listOf(p.category, p.subCategory)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" > ")
+                    p.category.equals(selectedCategory, ignoreCase = true) ||
+                        path.equals(selectedCategory, ignoreCase = true) ||
+                        path.startsWith("$selectedCategory > ")
+                }
             }
+        }
+    }
+
+    /**
+     * When the typed text does not match anything exactly, show the closest
+     * shelf items before offering to add a brand new one.
+     */
+    val similarProducts = remember(products, searchQuery) {
+        if (searchQuery.isBlank()) {
+            emptyList()
+        } else {
+            val q = searchQuery.trim().lowercase()
+            fun score(p: ProductEntity): Int = when {
+                p.name.lowercase().contains(q) -> 100
+                p.barcode.contains(q) || p.sku.contains(q) -> 80
+                p.category.lowercase().contains(q) || p.subCategory.lowercase().contains(q) -> 70
+                p.name.lowercase().split(" ").any { it.length >= 3 && (it.contains(q) || q.contains(it)) } -> 50
+                else -> 0
+            }
+            products
+                .filter { score(it) > 0 }
+                .sortedWith(compareByDescending<ProductEntity> { score(it) }.thenBy { it.name })
+                .take(4)
         }
     }
 
@@ -250,10 +327,10 @@ fun SellScreen(
                     }
 
                     IconButton(
-                        onClick = { showQuickSaleDialog = true },
+                        onClick = { quickPrefillName = ""; quickPrefillBarcode = null; showQuickSaleDialog = true },
                         modifier = Modifier.testTag("quick_sale_icon_button")
                     ) {
-                        Icon(Icons.Default.FlashOn, contentDescription = "Quick Sale", tint = StatusAmber)
+                        Icon(Icons.Default.FlashOn, contentDescription = "Quick Add", tint = BrandTealPrimary)
                     }
 
                     IconButton(
@@ -326,30 +403,15 @@ fun SellScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = StatusAmberBg,
-                            border = CardDefaults.outlinedCardBorder(),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { showQuickSaleDialog = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.FlashOn, contentDescription = null, tint = StatusAmber, modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Quick Sale", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusAmber)
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
                             color = BrandMintSurface,
                             border = CardDefaults.outlinedCardBorder(),
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { showQuickItemDialog = true }
+                                .clickable {
+                                    quickPrefillName = ""
+                                    quickPrefillBarcode = null
+                                    showQuickSaleDialog = true
+                                }
                         ) {
                             Row(
                                 modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
@@ -358,7 +420,7 @@ fun SellScreen(
                             ) {
                                 Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = BrandTealPrimary, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Quick Item", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                                Text("Quick Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
                             }
                         }
 
@@ -486,22 +548,69 @@ fun SellScreen(
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = "Add and sell it directly as a quick item without interruption:",
+                                    text = if (similarProducts.isNotEmpty()) {
+                                        "The closest items on your shelf are below. Or add this as a new item and categorise it later."
+                                    } else {
+                                        "It is not in your catalogue yet. Add it as a new item and categorise it later."
+                                    },
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
                                 )
+
+                                if (similarProducts.isNotEmpty()) {
+                                    similarProducts.forEach { p ->
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = LightSurface,
+                                            border = CardDefaults.outlinedCardBorder(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp)
+                                                .clickable {
+                                                    if (hasVariantOptions(products, p)) {
+                                                        variantPickerProduct = p
+                                                    } else {
+                                                        viewModel.addToCart(p)
+                                                    }
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(p.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                                    Text(
+                                                        listOf(p.category, p.subCategory).filter { it.isNotBlank() }.joinToString(" > "),
+                                                        fontSize = 10.sp,
+                                                        color = TextSecondary
+                                                    )
+                                                }
+                                                Text(
+                                                    CurrencyUtils.formatLkr(p.sellingPrice),
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    fontSize = 13.sp,
+                                                    color = BrandTealPrimary
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+
                                 Button(
                                     onClick = {
-                                        viewModel.addQuickItemToCart(name = searchQuery, price = 100.0, quantity = 1.0)
-                                        searchQuery = ""
+                                        quickPrefillName = searchQuery
+                                        quickPrefillBarcode = null
+                                        showQuickSaleDialog = true
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
                                 ) {
                                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("+ Sell \"$searchQuery\" (Rs. 100)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Add \"$searchQuery\" as a new item", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -518,10 +627,18 @@ fun SellScreen(
                         ) {
                             items(filteredProducts) { product ->
                                 val cartQty = cart.find { it.productId == product.id }?.quantity ?: 0.0
+                                val hasVariants = hasVariantOptions(products, product)
                                 ProductQuickCard(
                                     product = product,
                                     cartQty = cartQty,
-                                    onAdd = { viewModel.addToCart(product) }
+                                    hasVariants = hasVariants,
+                                    onAdd = {
+                                        if (hasVariants) {
+                                            variantPickerProduct = product
+                                        } else {
+                                            viewModel.addToCart(product)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -591,7 +708,7 @@ fun SellScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text("Cart is empty", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
-                                    Text("Tap any product above, scan barcode, or use Quick Item to sell.", fontSize = 11.sp, color = TextSecondary)
+                                    Text("Tap any product above, scan barcode, or use Quick Add to sell.", fontSize = 11.sp, color = TextSecondary)
                                 }
                             }
                         }
@@ -711,21 +828,97 @@ fun SellScreen(
         BarcodeEntryDialog(
             onBarcodeEntered = { barcode ->
                 // Looks the code up in this shop's own catalogue. If it isn't
-                // there we open Quick Item pre-filled instead of inventing a price.
-                viewModel.addProductByBarcode(barcode) { missing ->
-                    unknownBarcode = missing
-                    showQuickItemDialog = true
-                }
+                // there we open Quick Add pre-filled instead of inventing a price.
+                viewModel.addProductByBarcode(
+                    barcode,
+                    onFound = { found ->
+                        if (hasVariantOptions(products, found)) {
+                            variantPickerProduct = found
+                        } else {
+                            viewModel.addToCart(found)
+                        }
+                    },
+                    onMissing = { missing ->
+                        unknownBarcode = missing
+                        quickPrefillBarcode = missing
+                        quickPrefillName = ""
+                        showQuickSaleDialog = true
+                    }
+                )
                 showBarcodeDialog = false
+            },
+            onOpenCamera = {
+                showBarcodeDialog = false
+                showCameraScannerDialog = true
             },
             onDismiss = { showBarcodeDialog = false }
         )
     }
 
-    if (showQuickItemDialog) {
-        QuickItemDialog(
-            prefillBarcode = unknownBarcode,
-            onAdd = { name, price, qty, disc, savePermanent ->
+    if (showCameraScannerDialog) {
+        CameraScannerDialog(
+            onCodeScanned = { code ->
+                viewModel.addProductByBarcode(
+                    code,
+                    onFound = { found ->
+                        if (hasVariantOptions(products, found)) {
+                            variantPickerProduct = found
+                        } else {
+                            viewModel.addToCart(found)
+                        }
+                    },
+                    onMissing = { missing ->
+                        unknownBarcode = missing
+                        quickPrefillBarcode = missing
+                        quickPrefillName = ""
+                        showQuickSaleDialog = true
+                    }
+                )
+                showCameraScannerDialog = false
+            },
+            onUseManual = {
+                showCameraScannerDialog = false
+                showBarcodeDialog = true
+            },
+            onDismiss = { showCameraScannerDialog = false }
+        )
+    }
+
+    variantPickerProduct?.let { parent ->
+        VariantPickerDialog(
+            parent = parent,
+            children = variantChildrenOf(products, parent),
+            addedCount = cart.count { it.productId == parent.id || it.name.startsWith(parent.name) },
+            onAddParent = {
+                viewModel.addToCart(parent)
+                variantPickerProduct = null
+            },
+            onAddVariant = { child ->
+                viewModel.addToCart(child)
+                variantPickerProduct = null
+            },
+            onAddDefinition = { lineName, variantPrice ->
+                viewModel.addQuickItemToCart(
+                    name = lineName,
+                    price = variantPrice
+                )
+                variantPickerProduct = null
+            },
+            onDismiss = { variantPickerProduct = null }
+        )
+    }
+
+    if (showQuickSaleDialog) {
+        QuickSaleDialog(
+            prefillName = quickPrefillName,
+            prefillBarcode = quickPrefillBarcode,
+            onSell = { amount ->
+                viewModel.addQuickSaleToCart(amount)
+                quickPrefillName = ""
+                quickPrefillBarcode = null
+                showQuickSaleDialog = false
+            },
+            onAddItem = { name, price, qty, disc, savePermanent ->
                 viewModel.addQuickItemToCart(name, price, qty, disc)
                 if (savePermanent) {
                     viewModel.saveProduct(
@@ -733,33 +926,27 @@ fun SellScreen(
                         name = name,
                         sellingPrice = price,
                         costPrice = 0.0,
-                        barcode = unknownBarcode.orEmpty(),
+                        barcode = quickPrefillBarcode.orEmpty(),
                         sku = "",
                         category = "Other",
                         unit = "Piece",
                         openingStock = 0.0,
                         lowStock = 0.0,
                         isTracked = false,
-                        isFavourite = true
+                        isFavourite = true,
+                        subCategory = "",
+                        variants = ""
                     )
                 }
-                unknownBarcode = null
-                showQuickItemDialog = false
-            },
-            onDismiss = {
-                unknownBarcode = null
-                showQuickItemDialog = false
-            }
-        )
-    }
-
-    if (showQuickSaleDialog) {
-        QuickSaleDialog(
-            onSell = { amount ->
-                viewModel.addQuickSaleToCart(amount)
+                quickPrefillName = ""
+                quickPrefillBarcode = null
                 showQuickSaleDialog = false
             },
-            onDismiss = { showQuickSaleDialog = false }
+            onDismiss = {
+                quickPrefillName = ""
+                quickPrefillBarcode = null
+                showQuickSaleDialog = false
+            }
         )
     }
 
@@ -806,6 +993,9 @@ fun SellScreen(
         CheckoutSheet(
             totalAmount = totalAmount,
             customer = selectedCustomer,
+            onAddCustomer = { name, phone ->
+                viewModel.saveCustomer(0, name, phone, "", "", 0.0, "")
+            },
             onComplete = { method, cashReceived, cardAmt, creditAmt ->
                 viewModel.completeSale(method, cashReceived, cardAmt, creditAmt)
                 showCheckoutSheet = false
@@ -862,6 +1052,7 @@ fun SellScreen(
 fun ProductQuickCard(
     product: ProductEntity,
     cartQty: Double = 0.0,
+    hasVariants: Boolean = false,
     onAdd: () -> Unit
 ) {
     Card(
@@ -892,6 +1083,15 @@ fun ProductQuickCard(
                     modifier = Modifier.weight(1f),
                     color = TextPrimary
                 )
+                if (product.isVariant) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        Icons.Default.CallSplit,
+                        contentDescription = "Variant",
+                        tint = TextMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(4.dp))
                 Box(
                     modifier = Modifier
@@ -963,6 +1163,282 @@ fun ProductQuickCard(
                         color = if (isLow) StatusAmber else TextSecondary
                     )
                 }
+            }
+
+            if (hasVariants) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = BrandMintSurface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CallSplit,
+                            contentDescription = null,
+                            tint = BrandTealPrimary,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            "Tap to choose a variant",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BrandTealPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// Variant picker: a product with sizes/colours/portions opens before adding it.
+// -------------------------------------------------------------------------------------
+@Composable
+fun VariantPickerDialog(
+    parent: ProductEntity,
+    children: List<ProductEntity>,
+    addedCount: Int = 0,
+    onAddParent: () -> Unit,
+    onAddVariant: (ProductEntity) -> Unit,
+    onAddDefinition: (name: String, price: Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val groups = VariantCatalog.parseGroups(parent.variants)
+    val combos = VariantCatalog.buildCombinations(parent.variants, parent.sellingPrice)
+    var selected by remember(parent.id, parent.variants) { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    val allSelected = groups.all { g -> selected[g.name]?.isNotBlank() == true }
+    val selectedCombo: VariantCombination? = if (allSelected && combos.isNotEmpty()) {
+        combos.firstOrNull { combo ->
+            groups.withIndex().all { (index, group) ->
+                combo.labels.getOrNull(index)
+                    ?.equals(selected[group.name].orEmpty(), ignoreCase = true) == true
+            }
+        }
+    } else null
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Choose a variant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = TextPrimary)
+                        Text(
+                            listOf(parent.category, parent.subCategory)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" > ")
+                                .ifBlank { "Product" },
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                    if (addedCount > 0) {
+                        Surface(shape = RoundedCornerShape(8.dp), color = StatusGreenBg) {
+                            Text(
+                                "$addedCount in bill",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusGreen,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text("Base item", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = BrandMintSurface,
+                    border = CardDefaults.outlinedCardBorder(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onAddParent)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(parent.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                            if (parent.isTracked) {
+                                Text("${parent.currentStock.toInt()} ${parent.unit}", fontSize = 11.sp, color = if (parent.currentStock <= parent.lowStockThreshold) StatusAmber else TextSecondary)
+                            }
+                        }
+                        Text(CurrencyUtils.formatLkr(parent.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandTealPrimary)
+                    }
+                }
+
+                // Deep options (e.g. Rice + Portion) show one group at a time.
+                if (groups.isNotEmpty()) {
+                    groups.forEach { group ->
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(group.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            group.options.forEach { option ->
+                                val isChosen = selected[group.name] == option
+                                OutlinedButton(
+                                    onClick = { selected = selected + (group.name to option) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isChosen) BrandTealPrimary else LightSurface,
+                                        contentColor = if (isChosen) Color.White else TextPrimary
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(option, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (allSelected && selectedCombo != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = BrandMintSurface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "${parent.name} - ${selectedCombo.displayName}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = TextPrimary
+                                    )
+                                    Text("One option", fontSize = 10.sp, color = TextSecondary)
+                                }
+                                Text(
+                                    CurrencyUtils.formatLkr(selectedCombo.price),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 15.sp,
+                                    color = BrandTealPrimary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val child = VariantCatalog.findChild(children, parent.id, parent.name, selectedCombo)
+                                if (child != null) onAddVariant(child) else onAddDefinition("${parent.name} - ${selectedCombo.displayName}", selectedCombo.price)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(50.dp)
+                        ) {
+                            Text("ADD ${selectedCombo.displayName.uppercase()}", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Choose one from each group to see the price.", fontSize = 11.sp, color = TextMuted)
+                    }
+
+                    if (children.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text("Stocked lines", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        children.forEach { child ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = LightSurface,
+                                border = CardDefaults.outlinedCardBorder(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onAddVariant(child) }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(child.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                        if (child.isTracked) {
+                                            Text("${child.currentStock.toInt()} ${child.unit}", fontSize = 11.sp, color = if (child.currentStock <= child.lowStockThreshold) StatusAmber else TextSecondary)
+                                        }
+                                    }
+                                    Text(CurrencyUtils.formatLkr(child.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandTealPrimary)
+                                }
+                            }
+                        }
+                    }
+                } else if (combos.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Quick options", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    combos.forEach { combo ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = LightSurface,
+                            border = CardDefaults.outlinedCardBorder(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val child = VariantCatalog.findChild(children, parent.id, parent.name, combo)
+                                        if (child != null) onAddVariant(child) else onAddDefinition("${parent.name} - ${combo.displayName}", combo.price)
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${parent.name} - ${combo.displayName}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                }
+                                Text(CurrencyUtils.formatLkr(combo.price), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandTealPrimary)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Every option is its own stockable line. Deep products such as rice + portion are created automatically from the product's variant rules.",
+                    fontSize = 11.sp,
+                    color = TextMuted
+                )
             }
         }
     }
@@ -1323,7 +1799,8 @@ fun CartItemRow(
 @Composable
 fun BarcodeEntryDialog(
     onBarcodeEntered: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenCamera: () -> Unit
 ) {
     var barcode by remember { mutableStateOf("") }
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -1352,12 +1829,24 @@ fun BarcodeEntryDialog(
                 }
 
                 Text(
-                    "Scan with your barcode reader, or type the number.",
+                    "Scan with your barcode reader, type the number, or open the in-app camera.",
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                FilledTonalButton(
+                    onClick = onOpenCamera,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open camera scanner", fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 OutlinedTextField(
                     value = barcode,
@@ -1397,6 +1886,171 @@ fun BarcodeEntryDialog(
                         .height(50.dp)
                 ) {
                     Text("Find item", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// In-app camera barcode + QR scanner.
+// -------------------------------------------------------------------------------------
+@androidx.camera.core.ExperimentalGetImage
+@Composable
+fun CameraScannerDialog(
+    onCodeScanned: (String) -> Unit,
+    onUseManual: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var granted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var found by remember { mutableStateOf(false) }
+
+    val scanner = remember {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
+                .build()
+        )
+    }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { result -> granted = result }
+
+    LaunchedEffect(Unit) {
+        if (!granted) launcher.launch(Manifest.permission.CAMERA)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Scan barcode / QR", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+                Text(
+                    "Point the camera at the product code. When it is found, the item goes straight onto the bill.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (!granted) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = StatusAmberBg,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Camera permission is needed to scan inside the app.",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusAmber,
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onUseManual,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Use keyboard", fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { launcher.launch(Manifest.permission.CAMERA) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Allow camera", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                    ) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx)
+                                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                                providerFuture.addListener({
+                                    val provider = providerFuture.get()
+                                    val preview = Preview.Builder().build().also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
+                                    val analysis = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+                                        .also { analyzer ->
+                                            analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                                val mediaImage = imageProxy.image
+                                                if (mediaImage != null) {
+                                                    val input = InputImage.fromMediaImage(
+                                                        mediaImage,
+                                                        imageProxy.imageInfo.rotationDegrees
+                                                    )
+                                                    scanner.process(input)
+                                                        .addOnSuccessListener { codes ->
+                                                            if (!found && codes.isNotEmpty()) {
+                                                                val raw = codes.first().rawValue.orEmpty()
+                                                                if (raw.isNotBlank()) {
+                                                                    found = true
+                                                                    onCodeScanned(raw)
+                                                                }
+                                                            }
+                                                        }
+                                                        .addOnCompleteListener { imageProxy.close() }
+                                                } else {
+                                                    imageProxy.close()
+                                                }
+                                            }
+                                        }
+                                    provider.unbindAll()
+                                    provider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                        preview,
+                                        analysis
+                                    )
+                                }, ContextCompat.getMainExecutor(ctx))
+                                previewView
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "If the scan is slow, tap Use keyboard instead.",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                    TextButton(onClick = onUseManual, modifier = Modifier.fillMaxWidth()) {
+                        Text("Use keyboard entry", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -1532,12 +2186,25 @@ fun QuickItemDialog(
 // -------------------------------------------------------------------------------------
 // Quick Sale Dialog
 // -------------------------------------------------------------------------------------
+// Quick Add — one shortcut that does both the old Quick Item and Quick Sale.
+// “Item” is for a named product/topup; “Total” is for a bulk amount with no
+// item detail. Either way it reaches the same cart in one or two taps.
 @Composable
 fun QuickSaleDialog(
+    prefillName: String = "",
+    prefillBarcode: String? = null,
     onSell: (Double) -> Unit,
+    onAddItem: (name: String, price: Double, qty: Double, discount: Double, savePermanent: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var mode by remember { mutableStateOf("ITEM") }
+    var name by remember { mutableStateOf(prefillName) }
+    var priceText by remember { mutableStateOf("") }
+    var qty by remember { mutableStateOf(1.0) }
     var amountText by remember { mutableStateOf("") }
+    var saveAsPermanent by remember { mutableStateOf(prefillBarcode != null || prefillName.isNotBlank()) }
+
+    val price = priceText.toDoubleOrNull() ?: 0.0
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1551,63 +2218,173 @@ fun QuickSaleDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("QUICK SALE", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
+                    Text("QUICK ADD", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
-                Text("Sell immediately by total amount without tracking items.", fontSize = 12.sp, color = TextSecondary)
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { amountText = it },
-                    label = { Text("Amount (Rs.)") },
-                    placeholder = { Text("2,500") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
+                if (prefillBarcode != null) {
+                    Text(
+                        "Barcode $prefillBarcode is not in your items yet. Add it here and it can be saved too.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                } else {
+                    Text("For a busy sale — name an item or just take a total.", fontSize = 13.sp, color = TextSecondary)
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("500", "1000", "2500", "5000").forEach { preset ->
-                        OutlinedButton(
-                            onClick = { amountText = preset },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(4.dp)
-                        ) {
-                            Text(preset, fontSize = 11.sp)
+                    QuickModeButton("ITEM", "Name it, price it", mode == "ITEM", { mode = "ITEM" }, Modifier.weight(1f))
+                    QuickModeButton("TOTAL", "Just the amount", mode == "TOTAL", { mode = "TOTAL" }, Modifier.weight(1f))
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (mode == "ITEM") {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Item name / description") },
+                        placeholder = { Text("e.g. Custom cup of tea") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Medium),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black
+                        ),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = priceText,
+                        onValueChange = { priceText = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Price (Rs.)") },
+                        leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp), color = Color.Black) },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Quantity", fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { if (qty > 1) qty -= 1.0 }) {
+                                Icon(Icons.Default.Remove, contentDescription = null)
+                            }
+                            Text("${qty.toInt()}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            IconButton(onClick = { qty += 1.0 }) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                            }
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = {
-                        val amount = amountText.toDoubleOrNull() ?: 0.0
-                        if (amount > 0) onSell(amount)
-                    },
-                    enabled = amountText.toDoubleOrNull() != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusAmber),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("ADD TO BILL", fontWeight = FontWeight.Bold, color = Color.White)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = saveAsPermanent, onCheckedChange = { saveAsPermanent = it })
+                        Text(
+                            "Also save to my items. ${name.ifBlank { "this item" }} can be categorised later.",
+                            fontSize = 13.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { if (price > 0) onAddItem(name.ifBlank { "Quick Item" }, price, qty, 0.0, saveAsPermanent) },
+                        enabled = price > 0 && name.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) {
+                        Text("ADD TO BILL", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it },
+                        label = { Text("Amount (Rs.)") },
+                        placeholder = { Text("2,500") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("500", "1000", "2500", "5000").forEach { preset ->
+                            OutlinedButton(
+                                onClick = { amountText = preset },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(4.dp)
+                            ) {
+                                Text(preset, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val amount = amountText.toDoubleOrNull() ?: 0.0
+                            if (amount > 0) onSell(amount)
+                        },
+                        enabled = amountText.toDoubleOrNull() != null,
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusAmber),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) {
+                        Text("ADD TOTAL TO BILL", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickModeButton(
+    label: String,
+    sub: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) BrandTealPrimary else LightSurfaceVariant,
+        border = if (selected) null else CardDefaults.outlinedCardBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selected) Color.White else TextPrimary)
+            Text(sub, fontSize = 9.sp, color = if (selected) Color.White.copy(alpha = 0.8f) else TextSecondary)
         }
     }
 }
@@ -1902,15 +2679,21 @@ fun HoldSaleDialog(
 fun CheckoutSheet(
     totalAmount: Double,
     customer: CustomerEntity?,
+    onAddCustomer: (name: String, phone: String) -> Unit,
     onComplete: (paymentMethod: String, cashReceived: Double, cardAmount: Double, creditAmount: Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedMethod by remember { mutableStateOf("CASH") } // CASH, CARD, CREDIT, SPLIT, QR
     var cashReceivedText by remember { mutableStateOf(totalAmount.toInt().toString()) }
     var splitCashText by remember { mutableStateOf((totalAmount / 2).toInt().toString()) }
+    var splitRemainingMethod by remember { mutableStateOf("CARD") } // CARD or CREDIT for the rest of a split
+    var showAddCustomer by remember { mutableStateOf(false) }
+    var newCustomerName by remember { mutableStateOf("") }
+    var newCustomerPhone by remember { mutableStateOf("") }
 
     val cashReceived = cashReceivedText.toDoubleOrNull() ?: 0.0
     val change = (cashReceived - totalAmount).coerceAtLeast(0.0)
+    val cashShort = selectedMethod == "CASH" && cashReceived > 0.0 && cashReceived < totalAmount - 0.001
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2030,6 +2813,49 @@ fun CheckoutSheet(
                             )
                         }
                     }
+
+                    if (cashShort) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = StatusAmberBg,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    "Cash received is less than the bill.",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusAmber
+                                )
+                                Text(
+                                    "The sale can't go through with less than ${CurrencyUtils.formatLkr(totalAmount)}. " +
+                                        "Split the remaining ${CurrencyUtils.formatLkr(totalAmount - cashReceived)} on card or as credit instead.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        splitCashText = cashReceived.toInt().toString()
+                                        splitRemainingMethod = "CARD"
+                                        selectedMethod = "SPLIT"
+                                    }
+                                ) {
+                                    Text("Split the rest on card", fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(
+                                    onClick = {
+                                        splitCashText = cashReceived.toInt().toString()
+                                        splitRemainingMethod = "CREDIT"
+                                        selectedMethod = "SPLIT"
+                                    }
+                                ) {
+                                    Text("Split the rest as credit", fontWeight = FontWeight.Bold, color = StatusAmber)
+                                }
+                            }
+                        }
+                    }
                 }
                 "CARD" -> {
                     Card(
@@ -2066,14 +2892,29 @@ fun CheckoutSheet(
                                 Text("Previous balance: ${CurrencyUtils.formatLkr(customer.creditBalance)}", fontSize = 12.sp)
                                 Text("New balance: ${CurrencyUtils.formatLkr(customer.creditBalance + totalAmount)}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             } else {
-                                Text("Please select a customer on the cart before saving a credit sale.", fontSize = 11.sp, color = StatusRed)
+                                Text("Please select a customer before saving a credit sale.", fontSize = 11.sp, color = StatusRed)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedButton(
+                                    onClick = { showAddCustomer = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Create customer now", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
                 "SPLIT" -> {
-                    Text("Split: Cash + Card", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Split payment", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Enter what the customer is paying cash first. The rest can go on a card or straight into their credit book.",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                     OutlinedTextField(
                         value = splitCashText,
                         onValueChange = { splitCashText = it },
@@ -2089,13 +2930,89 @@ fun CheckoutSheet(
                         singleLine = true
                     )
                     val splitCash = splitCashText.toDoubleOrNull() ?: 0.0
-                    val splitCard = (totalAmount - splitCash).coerceAtLeast(0.0)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("Card Portion: ${CurrencyUtils.formatLkr(splitCard)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                    val remaining = (totalAmount - splitCash).coerceAtLeast(0.0)
+                    if (remaining > 0.0) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Rest of bill (${CurrencyUtils.formatLkr(remaining)}):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (splitRemainingMethod == "CARD") BrandTealPrimary else LightSurfaceVariant,
+                                modifier = Modifier.weight(1f).clickable { splitRemainingMethod = "CARD" }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.CreditCard, contentDescription = null, tint = if (splitRemainingMethod == "CARD") Color.White else TextSecondary, modifier = Modifier.size(18.dp))
+                                    Text("On card", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CARD") Color.White else TextPrimary)
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (splitRemainingMethod == "CREDIT") StatusAmber else LightSurfaceVariant,
+                                modifier = Modifier.weight(1f).clickable { splitRemainingMethod = "CREDIT" }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = if (splitRemainingMethod == "CREDIT") Color.White else TextSecondary, modifier = Modifier.size(18.dp))
+                                    Text("As credit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CREDIT") Color.White else TextPrimary)
+                                }
+                            }
+                        }
+                        if (splitRemainingMethod == "CREDIT") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (customer != null) {
+                                Surface(shape = RoundedCornerShape(10.dp), color = StatusAmberBg, modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        "Credit to ${customer.name} — new balance ${CurrencyUtils.formatLkr(customer.creditBalance + remaining)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusAmber,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                }
+                            } else {
+                                Text("Select or create a customer for the credit portion.", fontSize = 11.sp, color = StatusRed)
+                                OutlinedButton(
+                                    onClick = { showAddCustomer = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Create customer now", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Full bill is covered by cash — no remaining amount to split.",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusGreen
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            val splitCash = splitCashText.toDoubleOrNull() ?: 0.0
+            val splitRemaining = (totalAmount - splitCash).coerceAtLeast(0.0)
+            val enableComplete = when (selectedMethod) {
+                "CASH" -> cashReceived >= totalAmount - 0.001
+                "CARD" -> totalAmount > 0.0
+                // Credit needs a person. You can create one on the spot below.
+                "CREDIT" -> customer != null
+                "SPLIT" -> splitCash >= 0.0 && splitRemaining >= 0.0 &&
+                    (splitRemainingMethod == "CARD" || customer != null) &&
+                    splitCash > 0.0 &&
+                    splitCash < totalAmount + 0.001
+                else -> false
+            }
 
             Button(
                 onClick = {
@@ -2104,13 +3021,15 @@ fun CheckoutSheet(
                         "CARD" -> onComplete("CARD", 0.0, totalAmount, 0.0)
                         "CREDIT" -> onComplete("CREDIT", 0.0, 0.0, totalAmount)
                         "SPLIT" -> {
-                            val splitCash = splitCashText.toDoubleOrNull() ?: 0.0
-                            val splitCard = (totalAmount - splitCash).coerceAtLeast(0.0)
-                            onComplete("SPLIT", splitCash, splitCard, 0.0)
+                            if (splitRemainingMethod == "CREDIT") {
+                                onComplete("SPLIT", splitCash, 0.0, splitRemaining)
+                            } else {
+                                onComplete("SPLIT", splitCash, splitRemaining, 0.0)
+                            }
                         }
                     }
                 },
-                enabled = selectedMethod != "CREDIT" || customer != null,
+                enabled = enableComplete,
                 colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
@@ -2122,7 +3041,65 @@ fun CheckoutSheet(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("COMPLETE SALE", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
+
+            if (selectedMethod == "CASH" && cashShort) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Enter the full amount before completing. The bill is ${CurrencyUtils.formatLkr(totalAmount)}.",
+                    fontSize = 11.sp,
+                    color = StatusRed,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
+    }
+
+    if (showAddCustomer) {
+        AlertDialog(
+            onDismissRequest = { showAddCustomer = false },
+            title = { Text("Create customer for credit", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newCustomerName,
+                        onValueChange = { newCustomerName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newCustomerPhone,
+                        onValueChange = { newCustomerPhone = it },
+                        label = { Text("Phone (optional)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newCustomerName.isNotBlank()) {
+                            onAddCustomer(newCustomerName.trim(), newCustomerPhone.trim())
+                            newCustomerName = ""
+                            newCustomerPhone = ""
+                            showAddCustomer = false
+                        }
+                    },
+                    enabled = newCustomerName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                ) {
+                    Text("Save & select")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCustomer = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

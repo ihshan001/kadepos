@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ProductEntity
+import com.example.data.model.VariantCatalog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.data.model.Permission
@@ -59,24 +62,39 @@ fun ProductsScreen(
     var showAddDialog by remember { mutableStateOf(false) }
 
     val categories = remember(products) {
-        products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+        buildList {
+            addAll(products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted())
+            addAll(
+                products.filter { it.subCategory.isNotBlank() }
+                    .map { listOf(it.category, it.subCategory).filter { it.isNotBlank() }.joinToString(" > ") }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+            )
+        }
     }
 
     val filteredProducts = remember(products, searchQuery, selectedFilter) {
         products.filter { p ->
+            val fullPath = listOf(p.category, p.subCategory)
+                .filter { it.isNotBlank() }
+                .joinToString(" > ")
             val matchFilter = when (selectedFilter) {
                 "ALL" -> true
                 "FAVOURITES" -> p.isFavourite
                 "LOW_STOCK" -> p.isTracked && p.currentStock <= p.lowStockThreshold && p.currentStock > 0
                 "OUT_OF_STOCK" -> p.isTracked && p.currentStock <= 0
-                else -> p.category.equals(selectedFilter, ignoreCase = true)
+                else -> p.category.equals(selectedFilter, ignoreCase = true) ||
+                    fullPath.equals(selectedFilter, ignoreCase = true) ||
+                    fullPath.startsWith("$selectedFilter > ")
             }
 
             val matchQuery = searchQuery.isBlank() ||
                     p.name.contains(searchQuery, ignoreCase = true) ||
                     p.barcode.contains(searchQuery, ignoreCase = true) ||
                     p.sku.contains(searchQuery, ignoreCase = true) ||
-                    p.category.contains(searchQuery, ignoreCase = true)
+                    p.category.contains(searchQuery, ignoreCase = true) ||
+                    p.subCategory.contains(searchQuery, ignoreCase = true)
 
             matchFilter && matchQuery
         }
@@ -243,7 +261,14 @@ fun ProductsScreen(
                     )
                 }
                 items(categories) { cat ->
-                    val countInCat = products.count { it.category.equals(cat, ignoreCase = true) }
+                    val countInCat = products.count { p ->
+                        val path = listOf(p.category, p.subCategory)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" > ")
+                        p.category.equals(cat, ignoreCase = true) ||
+                            path.equals(cat, ignoreCase = true) ||
+                            path.startsWith("$cat > ")
+                    }
                     ProductFilterChip(
                         label = "$cat ($countInCat)",
                         isSelected = selectedFilter.equals(cat, ignoreCase = true),
@@ -298,8 +323,11 @@ fun ProductsScreen(
     if (showAddDialog || editingProduct != null) {
         ProductEditDialog(
             product = editingProduct,
-            onSave = { id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low, tracked, fav ->
-                viewModel.saveProduct(id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low, tracked, fav)
+            onSave = { id, name, sellPrice, costPrice, barcode, sku, cat, sub, unit, stock, low, tracked, fav, variants ->
+                viewModel.saveProduct(
+                    id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low,
+                    tracked, fav, sub, variants
+                )
                 showAddDialog = false
                 editingProduct = null
             },
@@ -411,6 +439,10 @@ fun ProductItemCard(
                             fontSize = 14.sp,
                             color = TextPrimary
                         )
+                        if (product.isVariant) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Default.CallSplit, contentDescription = "Variant", tint = TextMuted, modifier = Modifier.size(15.dp))
+                        }
                         if (product.isFavourite) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(Icons.Default.Star, contentDescription = "Favourite", tint = StatusAmber, modifier = Modifier.size(15.dp))
@@ -425,7 +457,10 @@ fun ProductItemCard(
                             color = LightSurfaceVariant
                         ) {
                             Text(
-                                text = product.category.ifBlank { "General" },
+                                text = listOf(product.category, product.subCategory)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" > ")
+                                    .ifBlank { "General" },
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary,
@@ -435,6 +470,25 @@ fun ProductItemCard(
 
                         if (product.barcode.isNotBlank()) {
                             Text("EAN: ${product.barcode}", fontSize = 10.sp, color = TextMuted)
+                        }
+                    }
+
+                    if (product.variants.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(5.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = BrandMintSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                VariantCatalog.summary(product.variants),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BrandTealPrimary,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
@@ -728,11 +782,13 @@ fun ProductEditDialog(
         barcode: String,
         sku: String,
         category: String,
+        subCategory: String,
         unit: String,
         stock: Double,
         lowStock: Double,
         isTracked: Boolean,
-        isFavourite: Boolean
+        isFavourite: Boolean,
+        variants: String
     ) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -744,6 +800,8 @@ fun ProductEditDialog(
     var barcode by remember { mutableStateOf(product?.barcode ?: "") }
     var sku by remember { mutableStateOf(product?.sku ?: "") }
     var category by remember { mutableStateOf(product?.category ?: "General") }
+    var subCategory by remember { mutableStateOf(product?.subCategory ?: "") }
+    var variants by remember { mutableStateOf(product?.variants ?: "") }
     var unit by remember { mutableStateOf(product?.unit ?: "Piece") }
     var stockText by remember { mutableStateOf(product?.currentStock?.toInt()?.toString() ?: "10") }
     var lowStockText by remember { mutableStateOf(product?.lowStockThreshold?.toInt()?.toString() ?: "3") }
@@ -843,6 +901,29 @@ fun ProductEditDialog(
                             singleLine = true
                         )
                     }
+                }
+
+                // Sub-category / category path. Allows "Main > Sub > Sub" so a
+                // shop never has to flatten a food menu or a dress line.
+                item {
+                    OutlinedTextField(
+                        value = subCategory,
+                        onValueChange = { subCategory = it },
+                        label = { Text("Sub-category (optional)") },
+                        placeholder = { Text("e.g. Rice dishes > Biriyani") },
+                        supportingText = { Text("Use a \">\" between levels for endless nesting.", fontSize = 10.sp) },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandTealPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandTealPrimary
+                        ),
+                        singleLine = true
+                    )
                 }
 
                 // Unit Presets quick click
@@ -953,6 +1034,43 @@ fun ProductEditDialog(
                     )
                 }
 
+                // 3.5 Variants / options. If anything is typed here it is not
+                // just stored — the app creates a real product line for each
+                // option, so each one can carry its own price and stock.
+                item {
+                    OutlinedTextField(
+                        value = variants,
+                        onValueChange = { variants = it },
+                        label = { Text("Variants / options (optional)") },
+                        placeholder = { Text("Regular|650\nFull|750") },
+                        supportingText = {
+                            Text(
+                                "One per line as a name, or Name|price. Deep: groups + prices so each choice changes the price.\n" +
+                                    "Example:\n" +
+                                    "Rice: Basmati|Keeri\n" +
+                                    "Portion: Regular|Full\n" +
+                                    "Basmati/Regular|1200\n" +
+                                    "Basmati/Full|1800\n" +
+                                    "Keeri/Regular|1100\n" +
+                                    "Keeri/Full|1700",
+                                fontSize = 10.sp
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandTealPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandTealPrimary
+                        ),
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                }
+
                 // 4. Inventory tracking controls
                 item {
                     Card(
@@ -1049,11 +1167,13 @@ fun ProductEditDialog(
                                     barcode,
                                     sku,
                                     category.ifBlank { "General" },
+                                    subCategory.trim(),
                                     unit.ifBlank { "Piece" },
                                     stock,
                                     low,
                                     isTracked,
-                                    isFavourite
+                                    isFavourite,
+                                    variants.trim()
                                 )
                             }
                         },

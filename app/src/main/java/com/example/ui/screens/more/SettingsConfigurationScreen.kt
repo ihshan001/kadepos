@@ -22,6 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -30,6 +33,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.example.data.model.Permission
 import com.example.data.model.BusinessProfileEntity
 import com.example.ui.theme.*
@@ -39,6 +44,13 @@ import com.example.ui.util.ReceiptDesign
 import com.example.ui.util.ReceiptItemData
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosViewModel
+
+/** A ready-to-fill CSV so the owner can prepare a catalogue on a computer. */
+private val PRODUCT_CSV_TEMPLATE = """
+    name,sellingPrice,costPrice,barcode,sku,category,subCategory,unit,currentStock,lowStockThreshold,tracked,favourite,variants
+    Coconut Oil 1L,1900,1600,4791000000001,COCO-1L,Grocery,Oil,Litre,12,4,true,false,
+    Biriyani Regular,1200,800,,BIR-REG,Food,Rice dishes,Plate,0,0,false,false,"Regular|1200;Full|1800"
+""".trimIndent()
 
 enum class SettingsSection(val title: String, val icon: @Composable () -> Unit) {
     ALL("All", { Icon(Icons.Default.Tune, null, Modifier.size(16.dp)) }),
@@ -119,6 +131,51 @@ fun SettingsConfigurationScreen(
     var showTestPrintDialog by remember { mutableStateOf(false) }
     var showResetConfirmDialog by remember { mutableStateOf(false) }
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
+    var showFlushConfirmDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val csv = viewModel.exportProductsCsv()
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(csv.toByteArray(Charsets.UTF_8))
+                    }
+                }.onFailure { viewModel.showMessage("Could not write the CSV file") }
+            }
+        }
+    }
+    val templateLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(PRODUCT_CSV_TEMPLATE.toByteArray(Charsets.UTF_8))
+                }
+            }.onFailure { viewModel.showMessage("Could not write the CSV template") }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val content = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                }.getOrDefault("")
+                if (content.isBlank()) {
+                    viewModel.showMessage("That file was empty")
+                } else {
+                    viewModel.importProductsFromCsv(content)
+                }
+            }
+        }
+    }
 
     Scaffold(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets
@@ -693,7 +750,7 @@ fun SettingsConfigurationScreen(
             }
 
             // SECTION 4: DATA, OFFLINE & MAINTENANCE
-            if (shouldShowSection(SettingsSection.DATA, selectedSection, searchQuery, "Data backup export offline reset demo wizard")) {
+            if (shouldShowSection(SettingsSection.DATA, selectedSection, searchQuery, "Data backup export offline reset demo wizard csv import flush erase clear")) {
                 item {
                     SettingsCard(
                         title = "4. DATA & SYSTEM DURABILITY",
@@ -747,15 +804,71 @@ fun SettingsConfigurationScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = {
+                                    templateLauncher.launch("kadepos-products-template.csv")
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("download_products_template")
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Template", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    exportLauncher.launch("kadepos-products.csv")
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("export_products_csv")
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Products CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch("text/csv") },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("import_products_csv")
+                            ) {
+                                Icon(Icons.Default.Upload, contentDescription = null, Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Import CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "CSV columns: name, sellingPrice, costPrice, barcode, sku, category, subCategory, unit, currentStock, lowStockThreshold, tracked, favourite, variants. Tap Template for a ready-to-fill file, export your current list, or import one from your computer.",
+                            fontSize = 10.sp,
+                            color = TextSecondary
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = { showFlushConfirmDialog = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("flush_data_btn")
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Data flush — remove all current data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         OutlinedButton(
                             onClick = { showResetConfirmDialog = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusAmber),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth().testTag("reset_demo_btn")
                         ) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = null, Modifier.size(16.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reset Store to Default Demo Data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Run the Setup Wizard again", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -922,15 +1035,15 @@ fun SettingsConfigurationScreen(
         )
     }
 
-    // --- Reset Confirm Dialog ---
+    // --- Setup Wizard Confirm Dialog ---
     if (showResetConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showResetConfirmDialog = false },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = StatusRed) },
-            title = { Text("Reset Store Data?", fontWeight = FontWeight.Bold) },
+            icon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = StatusAmber) },
+            title = { Text("Run the setup wizard again?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "This will restore sample products (Coca-Cola, Bread, Milk, Water, etc.), clear current test bills, and reset Sri Lankan credit book accounts to their starting state."
+                    "This opens the setup screens. Nothing is deleted just by running it — use “Data flush” below if you also want to remove all current data."
                 )
             },
             confirmButton = {
@@ -939,13 +1052,43 @@ fun SettingsConfigurationScreen(
                         showResetConfirmDialog = false
                         viewModel.setOnboardingStep(1)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
                 ) {
-                    Text("Reset & Setup Again", fontWeight = FontWeight.Bold)
+                    Text("Open wizard", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // --- Data flush Confirm Dialog ---
+    if (showFlushConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showFlushConfirmDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = StatusRed) },
+            title = { Text("Erase all app data?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This permanently removes every product, sale, customer, supplier, credit entry, stock movement, expense, team member and audit log from this phone. The app is then prepared for setup again.\n\nThere is no undo."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFlushConfirmDialog = false
+                        viewModel.clearAllBusinessData()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                ) {
+                    Text("Yes, erase everything", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFlushConfirmDialog = false }) {
                     Text("Cancel")
                 }
             }

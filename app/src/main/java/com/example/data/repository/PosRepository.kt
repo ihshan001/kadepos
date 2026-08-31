@@ -21,6 +21,7 @@ import com.example.data.model.SaleItemEntity
 import com.example.data.model.StaffEntity
 import com.example.data.model.StockMovementEntity
 import com.example.data.model.SupplierEntity
+import com.example.data.model.VariantCatalog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -63,7 +64,7 @@ class PosRepository(private val dao: PosDao) {
      * Adds a product and records its opening stock as the first movement, so
      * the ledger and the cached figure agree from the moment it exists.
      */
-    suspend fun insertProductWithOpeningStock(product: ProductEntity) {
+    suspend fun insertProductWithOpeningStock(product: ProductEntity): Long {
         val id = dao.insertProduct(product)
         if (product.isTracked && product.currentStock > 0.0 && id > 0) {
             dao.insertStockMovement(
@@ -77,6 +78,7 @@ class PosRepository(private val dao: PosDao) {
                 )
             )
         }
+        return id
     }
     suspend fun updateProduct(product: ProductEntity) = dao.updateProduct(product)
     suspend fun archiveProduct(id: Long) = dao.archiveProduct(id)
@@ -118,6 +120,10 @@ class PosRepository(private val dao: PosDao) {
     suspend fun countProductsForShopType(shopType: String) = dao.countProductsForShopType(shopType)
 
     suspend fun clearAllProducts() = dao.clearAllProducts()
+
+    suspend fun getVariantChildren(parentId: Long) = dao.getVariantChildren(parentId)
+
+    suspend fun getAllProductsSync() = dao.getAllProductsSync()
 
     suspend fun getProductByBarcode(barcode: String, shopType: String) =
         dao.getProductByBarcode(barcode, shopType)
@@ -213,6 +219,141 @@ class PosRepository(private val dao: PosDao) {
                 )
             }
         }
+    }
+
+    /** Erases every sale, customer, supplier, product, stock and log row. */
+    suspend fun clearAllBusinessData() = dao.clearAllBusinessData()
+
+    /**
+     * A simple, spreadsheet-friendly CSV of the current catalogue (including
+     * the new sub-category and options columns). Used by Settings to hand a
+     * shopkeeper a template they can fill in on a computer.
+     */
+    suspend fun exportProductsCsv(): String {
+        val headers = listOf(
+            "name", "sellingPrice", "costPrice", "barcode", "sku", "category",
+            "subCategory", "unit", "currentStock", "lowStockThreshold", "tracked",
+            "favourite", "variants"
+        )
+        val rows = dao.getAllProductsSync().map { p ->
+            listOf(
+                p.name, p.sellingPrice.toString(), p.costPrice.toString(), p.barcode,
+                p.sku, p.category, p.subCategory, p.unit, p.currentStock.toString(),
+                p.lowStockThreshold.toString(), p.isTracked.toString(), p.isFavourite.toString(),
+                // Keep variants on one line so the CSV can be re-imported without
+                // needing a multi-line quote/parse step.
+                p.variants.replace("\r\n", ";").replace("\n", ";").replace("\r", ";")
+            )
+        }
+        return buildString {
+            append(headers.joinToString(",") { csvCell(it) })
+            append("\n")
+            rows.forEach { row ->
+                append(row.joinToString(",") { csvCell(it) })
+                append("\n")
+            }
+        }
+    }
+
+    /**
+     * Imports products from the CSV exported above. Rows are inserted with their
+     * opening stock as a ledger movement, exactly as a manually added product
+     * would be, so the shelf count is never just a display figure.
+     *
+     * Returns (count of rows saved, list of human readable problems).
+     */
+    suspend fun importProductsFromCsv(raw: String, shopType: String): Pair<Int, List<String>> {
+        var saved = 0
+        val problems = mutableListOf<String>()
+        val lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        val dataLines = lines
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .filterNot { it.startsWith("name,", ignoreCase = true) || it.startsWith("name\"", ignoreCase = true) }
+
+        dataLines.forEachIndexed { index, line ->
+            val cells = parseCsvLine(line)
+            if (cells.size < 2) {
+                problems.add("Line ${index + 1}: needs at least a name and a selling price")
+                return@forEachIndexed
+            }
+            val name = cells.getOrNull(0)?.trim().orEmpty()
+            val selling = cells.getOrNull(1)?.trim()?.toDoubleOrNull()
+            if (name.isBlank() || selling == null || selling < 0.0) {
+                problems.add("Line ${index + 1}: name is blank or the price is not a number")
+                return@forEachIndexed
+            }
+            val product = ProductEntity(
+                name = name,
+                sellingPrice = selling,
+                costPrice = cells.getOrNull(2)?.trim()?.toDoubleOrNull() ?: 0.0,
+                barcode = cells.getOrNull(3)?.trim().orEmpty(),
+                sku = cells.getOrNull(4)?.trim().orEmpty(),
+                category = cells.getOrNull(5)?.trim().orEmpty().ifBlank { "General" },
+                subCategory = cells.getOrNull(6)?.trim().orEmpty(),
+                unit = cells.getOrNull(7)?.trim().orEmpty().ifBlank { "Piece" },
+                currentStock = cells.getOrNull(8)?.trim()?.toDoubleOrNull() ?: 0.0,
+                lowStockThreshold = cells.getOrNull(9)?.trim()?.toDoubleOrNull() ?: 5.0,
+                isTracked = cells.getOrNull(10)?.trim()?.toBooleanStrictOrNull() ?: true,
+                isFavourite = cells.getOrNull(11)?.trim()?.toBooleanStrictOrNull() ?: false,
+                variants = cells.getOrNull(12)?.trim().orEmpty(),
+                shopType = shopType
+            )
+            val parentId = insertProductWithOpeningStock(product)
+            // A CSV cell can carry simple definitions ("Regular|1200;Full|1800")
+            // or deep ones ("Rice: Basmati|Keeri;Portion: Regular|Full;
+            // Basmati/Regular|1200;..."). Build a stockable child line per
+            // purchasable combination, matching the in-app add exactly.
+            val combos = VariantCatalog.buildCombinations(product.variants, selling)
+            combos.forEach { combo ->
+                insertProductWithOpeningStock(
+                    product.copy(
+                        id = 0L,
+                        name = VariantCatalog.childName(name, combo),
+                        sellingPrice = combo.price,
+                        variants = "",
+                        parentProductId = parentId,
+                        isVariant = true,
+                        currentStock = 0.0,
+                        isTracked = product.isTracked
+                    )
+                )
+            }
+            saved++
+        }
+        return saved to problems
+    }
+
+    private fun csvCell(value: String): String {
+        val needsQuotes = value.contains(',') || value.contains('"') || value.contains('\n')
+        val escaped = value.replace("\"", "\"\"")
+        return if (needsQuotes) "\"$escaped\"" else escaped
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val out = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuote = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' && inQuote && i + 1 < line.length && line[i + 1] == '"' -> {
+                    current.append('"')
+                    i += 2
+                    continue
+                }
+                c == '"' -> inQuote = !inQuote
+                c == ',' && !inQuote -> {
+                    out.add(current.toString().trim())
+                    current.setLength(0)
+                }
+                else -> current.append(c)
+            }
+            i++
+        }
+        out.add(current.toString().trim())
+        return out
     }
 
     suspend fun insertSupplier(supplier: SupplierEntity) = dao.insertSupplier(supplier)

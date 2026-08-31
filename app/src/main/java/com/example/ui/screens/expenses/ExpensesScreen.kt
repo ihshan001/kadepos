@@ -53,7 +53,7 @@ private val expenseKinds = listOf(
     ExpenseKind("Transport", Icons.Default.LocalShipping, BrandTealPrimary),
     ExpenseKind("Staff pay", Icons.Default.Groups, StatusGreen),
     ExpenseKind("Tea & food", Icons.Default.Restaurant, StatusAmber),
-    ExpenseKind("Repairs", Icons.Default.Build, StatusRed),
+    ExpenseKind("Repairs", Icons.Default.Build, StatusAmber),
     ExpenseKind("Packaging", Icons.Default.Inventory2, TextSecondary),
     ExpenseKind("Phone & internet", Icons.Default.Smartphone, StatusBlue),
     ExpenseKind("Something else", Icons.Default.MoreHoriz, TextSecondary)
@@ -132,7 +132,7 @@ fun ExpensesScreen(
                     label = "SPENT TODAY",
                     amount = todayTotal,
                     caption = "${CurrencyUtils.formatLkr(monthTotal)} so far this month",
-                    accent = StatusRed
+                    accent = BrandTealPrimary
                 )
             }
 
@@ -186,7 +186,7 @@ fun ExpensesScreen(
             title = kind.label,
             subtitle = "How much did you spend?",
             confirmLabel = "Save expense",
-            accent = StatusRed,
+            accent = BrandTealPrimary,
             onConfirm = { amount ->
                 viewModel.addExpense(kind.label, amount, "CASH", "", "")
                 adding = null
@@ -307,7 +307,7 @@ private fun ExpenseRow(expense: ExpenseEntity, onLongPress: () -> Unit) {
                 CurrencyUtils.formatLkr(expense.amount),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = StatusRed
+                color = BrandTealPrimary
             )
         }
     }
