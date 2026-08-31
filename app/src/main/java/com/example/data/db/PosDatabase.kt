@@ -50,7 +50,7 @@ import com.example.data.model.SupplierEntity
         NotificationEntity::class,
         NotificationSettingsEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class PosDatabase : RoomDatabase() {

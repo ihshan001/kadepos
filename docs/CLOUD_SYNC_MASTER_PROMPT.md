@@ -1,9 +1,14 @@
-# KadePOS — Cross-Device Sync, Cloud Availability & Notifications
+# KadePOS — Self-Hosted Sync, Cloud Availability & Notifications
 
 **Status: planning document. Nothing described here is built yet.**
 This is the brief for a future phase. The app today is single-device and
 offline-only, and that is deliberate — read "Why offline-first is not
 negotiable" before changing anything.
+
+**Hosting decision (fixed): your own VPS or shared hosting, your own MySQL.**
+No Firebase, no Supabase, no third-party backend-as-a-service. Every byte of
+shop data lives on infrastructure you control. This document is written to that
+constraint throughout.
 
 Written for: whoever implements multi-device sync, whether that is a person or
 an AI agent. It is meant to be handed over whole as a master prompt.
@@ -20,30 +25,41 @@ Facts about the current build that constrain every decision below:
 
 | Thing | Current state |
 |---|---|
-| Storage | Room / SQLite on the device. `kadepos_database`, currently **v4** |
+| Device storage | Room / SQLite. `kadepos_database`, currently **v5** |
 | Network | **None.** The app makes zero network calls today |
 | Printing | Real Bluetooth SPP + Wi-Fi TCP (port 9100) ESC/POS |
-| Identity | Per-staff 4-digit PIN, no accounts, no email, no server |
-| Roles | 19 permissions, 4 roles, per-person overrides stored as CSV on the staff row |
+| Identity | Per-staff 4-digit PIN. No accounts, no email, no server |
+| Roles | 19 permissions, 4 roles, per-person overrides as CSV on the staff row |
 | Money | LKR only, `Rs.` prefix |
-| Migrations | `fallbackToDestructiveMigration(dropAllTables = true)` — **must be fixed before any shop is live** |
-| Entities | 18, including `sales`, `sale_items`, `products`, `customers`, `credit_transactions`, `suppliers`, `purchases`, `stock_movements`, `expenses`, `staff`, `cash_register_shifts`, `cash_movements`, `held_sales`, `audit_log`, `notifications`, `notification_settings` |
+| Migrations | `fallbackToDestructiveMigration(dropAllTables = true)` — **must be fixed first** |
+| Entities | 18 (see appendix) |
+| Optional features | Stock counting, credit book, cash drawer count, staff — each independently switchable |
 
 ### Why offline-first is not negotiable
 
 The typical shop has one Android phone, patchy mobile data, and daily power
-cuts. A sale must complete in under two seconds with the aeroplane mode on. If
-the cloud is ever on the critical path of taking money from a customer, the
-product has failed. Every rule below follows from this.
+cuts. A sale must complete in under two seconds with aeroplane mode on. If the
+server is ever on the critical path of taking money from a customer, the
+product has failed.
 
 **The test to apply to any design:** turn off all networking, sell twenty items,
 take cash, print. If anything blocks, spins, or errors, the design is wrong.
 
+### Two databases, two jobs — do not confuse them
+
+| | On the phone | On your server |
+|---|---|---|
+| Engine | **SQLite** (via Room) | **MySQL 8.0+** (or MariaDB 10.6+) |
+| Role | The source of truth for that device | The meeting point between devices |
+| Availability | Always | Best effort |
+
+They are **not** the same schema and should not be generated from one another.
+SQLite is loose about types; MySQL is strict. Keep the mapping explicit and
+written down (§3.4).
+
 ---
 
 ## 1. Target architecture
-
-### 1.1 Shape
 
 ```
    Device A (counter)        Device B (stock room)     Device C (owner phone)
@@ -51,57 +67,70 @@ take cash, print. If anything blocks, spins, or errors, the design is wrong.
    │  Compose UI    │        │  Compose UI    │        │  Compose UI    │
    │  PosViewModel  │        │       ...      │        │       ...      │
    │  PosRepository │        │                │        │                │
-   │  Room (truth)  │◄─local─┤                │        │                │
+   │  Room / SQLite │        │                │        │                │
    │  Outbox table  │        │                │        │                │
    └───────┬────────┘        └───────┬────────┘        └───────┬────────┘
-           │  SyncWorker (WorkManager, opportunistic)          │
+           │      SyncWorker — HTTPS, opportunistic            │
            └──────────────────┬───────────────────────────────┘
                               ▼
-                   ┌──────────────────────┐
-                   │   Sync API (HTTPS)   │
-                   │  per-shop tenancy    │
-                   ├──────────────────────┤
-                   │  Postgres + storage  │
-                   └──────────────────────┘
+              ┌───────────────────────────────────┐
+              │  YOUR VPS / shared host           │
+              │  ┌─────────────────────────────┐  │
+              │  │ PHP 8.2 or Node — sync API  │  │
+              │  ├─────────────────────────────┤  │
+              │  │ MySQL 8 — one DB, many shops│  │
+              │  └─────────────────────────────┘  │
+              └───────────────────────────────────┘
 ```
 
-**Room stays the source of truth on every device.** The cloud is a
-synchronisation and backup medium, never a read dependency. The UI must never
-`await` the network.
-
-### 1.2 The non-negotiable rules
+### The non-negotiable rules
 
 1. **No UI code path may await a network call.** Ever.
 2. **Writes go to Room first**, then to an outbox. Sync drains the outbox later.
-3. **A sale is immutable once completed.** It syncs as an append. This removes
-   most conflicts before they can exist.
-4. **Sync is per shop**, not per device. A shop is the tenant boundary.
-5. **Turning sync off must leave a fully working app.** It is a feature, not a
-   foundation.
+3. **A sale is immutable once completed.** It syncs as an append.
+4. **Sync is per shop.** A shop is the tenant boundary.
+5. **Turning sync off must leave a fully working app.**
 
 ---
 
-## 2. Choosing the backend
+## 2. Choosing your hosting
 
-Three realistic options. Pick one and commit; do not abstract over all three.
+You said VPS or shared hosting. They are very different for this workload.
 
-| | Supabase | Firebase | Custom (Ktor + Postgres) |
-|---|---|---|---|
-| Offline SDK | No real one for Android | Firestore has one | You build it |
-| Data model | Postgres, relational — matches Room | Document store, awkward for sale/sale_items | Postgres |
-| Row-level security | Excellent, SQL policies | Rules DSL, gets hairy | You build it |
-| Cost at 500 shops | Low, predictable | Reads are metered; a sync loop bug is expensive | VPS cost only |
-| Sri Lanka latency | ap-south-1 ≈ 40–80 ms | ap-south1 similar | Wherever you host |
-| Ops burden | Low | Lowest | Highest |
+| | Shared hosting (cPanel) | VPS (2 GB, e.g. Hetzner/DO/Contabo) |
+|---|---|---|
+| Cost | ~$3–8/mo | ~$5–12/mo |
+| MySQL | Provided, often `max_connections` 25–50 | Yours, tune freely |
+| Long-running processes | **Usually forbidden** | Fine |
+| Cron granularity | Often 5–15 min minimum | Per minute or systemd timers |
+| PHP | Always available | Your choice |
+| Node/Java | Rarely | Fine |
+| Backups | Host's, often weekly | Yours, scriptable |
+| Suits | Up to ~50 shops | Hundreds |
 
-**Recommendation: Supabase.** The relational model maps directly onto the
-existing Room schema, row-level security gives per-shop isolation almost for
-free, and its lack of an offline SDK does not matter — you are writing your own
-sync layer anyway, because the offline behaviour is the product.
+**Recommendation: start on shared hosting with PHP, move to a VPS at scale.**
 
-**Avoid Firestore** specifically because per-read billing punishes exactly the
-pattern a POS produces (frequent small syncs from many devices), and because
-`sales` → `sale_items` is a relational shape you would fight constantly.
+The sync API is a handful of stateless HTTPS endpoints doing simple MySQL
+reads and writes. Plain **PHP 8.2 + PDO** runs anywhere, needs no build step,
+no process manager, and no Docker. That is a genuine advantage when the thing
+must keep running for years with minimal attention.
+
+Pick a VPS from the start **only if** you already prefer Node/Kotlin on the
+server, or you expect more than ~50 shops soon.
+
+**Do not use SQLite on the server.** It is superb on the phone and wrong for a
+multi-writer network service — concurrent writes from several shops will hit
+`SQLITE_BUSY`. MySQL is the right choice server-side.
+
+### Sizing
+
+A shop doing 300 sales/day with 3 devices produces roughly:
+- ~1,200 rows/day (sales + items + stock movements)
+- ~35,000 rows/month
+- ~5 MB/month of MySQL storage
+
+100 shops ≈ 3.5M rows/month ≈ 500 MB/month. A 2 GB VPS handles this comfortably
+for a couple of years with the archival policy in §6.
 
 ---
 
@@ -110,28 +139,29 @@ pattern a POS produces (frequent small syncs from many devices), and because
 ### 3.1 Every syncable table gains
 
 ```kotlin
-val serverId: String? = null,        // UUID from the server, null until first sync
-val shopId: String = "",             // tenant key
-val updatedAt: Long = 0L,            // device clock, last local edit
-val serverUpdatedAt: Long = 0L,      // server clock, last confirmed sync
-val syncState: String = "PENDING",   // PENDING, SYNCED, CONFLICT, FAILED
-val deletedAt: Long? = null,         // soft delete; never hard-delete a synced row
-val originDevice: String = ""        // which device created it
+val uuid: String = java.util.UUID.randomUUID().toString(),  // sync identity
+val shopId: String = "",           // tenant key
+val updatedAt: Long = 0L,          // device clock, last local edit
+val serverUpdatedAt: Long = 0L,    // server clock, last confirmed sync
+val syncState: String = "PENDING", // PENDING, SYNCED, CONFLICT, FAILED
+val deletedAt: Long? = null,       // soft delete; never hard-delete a synced row
+val originDevice: String = ""
 ```
 
-**Use UUIDs, not autoincrement Longs, for anything that syncs.** Two devices
-offline will both mint `id = 47`. Generate a UUID at creation on the device;
-the server accepts it as the primary key. This single decision removes an
-entire class of merge bug.
+**Use UUIDs, not autoincrement, as the sync identity.** Two devices offline
+will both mint `id = 47`. Generate a UUID on the device; the server treats it
+as the natural key. This single decision removes an entire class of merge bug.
 
-Keep the existing `Long` primary keys for Room's internal relations if a full
-migration is too invasive, but add the UUID as a unique indexed column and make
-it the sync identity.
+Keep Room's existing `Long` primary keys for local relations — changing them is
+invasive — but add `uuid` as a `UNIQUE` indexed column and sync on that.
 
 ### 3.2 The outbox
 
 ```kotlin
-@Entity(tableName = "sync_outbox")
+@Entity(
+    tableName = "sync_outbox",
+    indices = [Index(value = ["nextAttemptAt"]), Index(value = ["entityUuid"])]
+)
 data class SyncOutboxEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val entityTable: String,
@@ -141,13 +171,13 @@ data class SyncOutboxEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val attempts: Int = 0,
     val lastError: String = "",
-    val nextAttemptAt: Long = 0L  // for backoff
+    val nextAttemptAt: Long = 0L
 )
 ```
 
 Write to `sync_outbox` in the **same Room transaction** as the business write.
-If the app is killed between the two, you get a silent divergence that nobody
-notices for weeks.
+If the app dies between the two you get a silent divergence nobody notices for
+weeks.
 
 ### 3.3 Sync metadata
 
@@ -156,95 +186,226 @@ notices for weeks.
 data class SyncStateEntity(
     @PrimaryKey val id: Int = 1,
     val shopId: String = "",
-    val deviceId: String = "",          // stable UUID, generated once on install
-    val deviceName: String = "",        // "Front counter", set by the owner
-    val cloudEnabled: Boolean = false,  // the master switch
+    val deviceId: String = "",
+    val deviceName: String = "",        // "Front counter"
+    val serverUrl: String = "",         // the owner's own server
+    val cloudEnabled: Boolean = false,
     val lastPullAt: Long = 0L,
     val lastPushAt: Long = 0L,
     val lastSuccessAt: Long = 0L,
-    val pullCursor: String = "",        // server watermark for incremental pull
+    val pullCursor: Long = 0L,          // server watermark
     val pendingCount: Int = 0,
     val lastError: String = ""
 )
 ```
 
+### 3.4 MySQL schema
+
+One database, all shops, `shop_id` on every row. Do **not** create a database
+per shop — shared hosting caps how many you may have, and migrations become
+unmanageable.
+
+```sql
+CREATE DATABASE kadepos
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+`utf8mb4` is required, not optional: Sinhala and Tamil product names break on
+`utf8`.
+
+```sql
+CREATE TABLE shops (
+  id            CHAR(36)     NOT NULL PRIMARY KEY,
+  name          VARCHAR(200) NOT NULL,
+  phone         VARCHAR(30),
+  plan          VARCHAR(20)  NOT NULL DEFAULT 'FREE',
+  row_quota     INT          NOT NULL DEFAULT 50000,
+  rows_used     INT          NOT NULL DEFAULT 0,
+  device_quota  TINYINT      NOT NULL DEFAULT 3,
+  created_at    BIGINT       NOT NULL,
+  archived_at   BIGINT       NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE devices (
+  id            CHAR(36)     NOT NULL PRIMARY KEY,
+  shop_id       CHAR(36)     NOT NULL,
+  name          VARCHAR(100) NOT NULL,
+  token_hash    CHAR(64)     NOT NULL,          -- SHA-256, never the raw token
+  approved      TINYINT(1)   NOT NULL DEFAULT 0,
+  last_seen_at  BIGINT       NULL,
+  revoked_at    BIGINT       NULL,
+  INDEX idx_shop (shop_id),
+  UNIQUE KEY uniq_token (token_hash),
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Pattern every synced table follows.
+CREATE TABLE sales (
+  uuid              CHAR(36)     NOT NULL PRIMARY KEY,
+  shop_id           CHAR(36)     NOT NULL,
+  invoice_number    VARCHAR(40)  NOT NULL,
+  customer_uuid     CHAR(36)     NULL,
+  customer_name     VARCHAR(200) NOT NULL DEFAULT 'Walk-in',
+  cashier_name      VARCHAR(200) NOT NULL DEFAULT '',
+  sold_at           BIGINT       NOT NULL,       -- the sale's own timestamp
+  subtotal          DECIMAL(12,2) NOT NULL,
+  discount_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_amount      DECIMAL(12,2) NOT NULL,
+  payment_method    VARCHAR(20)  NOT NULL,
+  cash_received     DECIMAL(12,2) NOT NULL DEFAULT 0,
+  change_given      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  status            VARCHAR(24)  NOT NULL DEFAULT 'COMPLETED',
+  origin_device     CHAR(36)     NOT NULL,
+  updated_at        BIGINT       NOT NULL,       -- device clock
+  server_seq        BIGINT       NOT NULL,       -- server watermark, see below
+  deleted_at        BIGINT       NULL,
+  INDEX idx_pull (shop_id, server_seq),
+  INDEX idx_invoice (shop_id, invoice_number),
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+```
+
+**`DECIMAL(12,2)` for every money column. Never `FLOAT` or `DOUBLE`.** Binary
+floating point cannot represent `0.10` exactly; a day of sales will drift by
+cents and the owner will notice, because reconciling cash is the one thing they
+check by hand. Room stores these as `Double` — convert at the boundary and
+round to 2 dp on the way in.
+
+**`server_seq`, not a timestamp, drives incremental pull.** Use a single
+monotonic counter per shop:
+
+```sql
+CREATE TABLE shop_sequence (
+  shop_id  CHAR(36) NOT NULL PRIMARY KEY,
+  seq      BIGINT   NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+```
+
+Allocate inside the same transaction as the write:
+
+```sql
+UPDATE shop_sequence SET seq = seq + 1 WHERE shop_id = ?;
+SELECT seq FROM shop_sequence WHERE shop_id = ?;
+```
+
+Device clocks in this market are frequently wrong by minutes or days — a phone
+that has never seen the internet may boot to 1970. **Anything keyed on client
+time will silently skip or duplicate rows.**
+
+#### Type mapping, Room → MySQL
+
+| Kotlin / Room | MySQL | Note |
+|---|---|---|
+| `Long` (id) | `BIGINT` | |
+| `String` (uuid) | `CHAR(36)` | Fixed width indexes far better than `VARCHAR` |
+| `String` (name) | `VARCHAR(200)` | `utf8mb4` |
+| `String` (notes) | `TEXT` | |
+| `Double` (money) | `DECIMAL(12,2)` | **Never FLOAT** |
+| `Double` (quantity) | `DECIMAL(12,3)` | 3 dp: goods sell by the 100 g |
+| `Boolean` | `TINYINT(1)` | |
+| `Long` (timestamp) | `BIGINT` | Epoch millis, UTC. Not `DATETIME` |
+
+Store timestamps as epoch millis, not `DATETIME`. It sidesteps server timezone
+configuration entirely, which on shared hosting you often cannot control.
+
 ---
 
-## 4. The sync algorithm
+## 4. The sync API
 
-### 4.1 Push (outbox drain)
+Six endpoints. Keep it boring.
+
+```
+POST /api/v1/pair          { code, device_name }        -> device_id, token
+POST /api/v1/push          { changes: [...] }           -> per-row results
+GET  /api/v1/pull?since=N&limit=500                     -> changes, next_cursor
+GET  /api/v1/status                                     -> quota, devices, health
+POST /api/v1/device/revoke { device_id }                -> owner only
+GET  /api/v1/export                                     -> full dump for the shop
+```
+
+Auth: `Authorization: Bearer <device-token>` on everything except `/pair`.
+Store only the SHA-256 of the token server-side.
+
+### 4.1 Push
 
 ```
 1. Read up to 200 outbox rows, oldest first, where nextAttemptAt <= now.
-2. Group by table; POST as one batch per table.
-3. Server replies per-row: ACCEPTED | CONFLICT | REJECTED.
-4. ACCEPTED  -> mark row SYNCED, set serverUpdatedAt, delete outbox entry.
-   CONFLICT  -> apply the resolution rules (§4.3), re-queue if needed.
-   REJECTED  -> record lastError, increment attempts, exponential backoff.
-5. After 10 failed attempts, surface it in the UI. Never fail silently.
+2. POST as one batch.
+3. Server replies per row: ACCEPTED | DUPLICATE | CONFLICT | REJECTED.
+4. ACCEPTED / DUPLICATE -> mark SYNCED, delete the outbox entry.
+   CONFLICT             -> apply §4.3, re-queue if needed.
+   REJECTED             -> record lastError, backoff, retry.
+5. After 10 failures, surface it in the UI. Never fail silently.
 ```
 
-Batch size of 200 keeps a request under a few hundred KB, which survives a
-2G-ish connection. Do not push the whole outbox in one request; a shop that has
-been offline for a fortnight will have thousands of rows.
+Batch at 200 rows. A shop offline for a fortnight has thousands queued; one
+giant request will time out on a weak connection, and shared hosts commonly cap
+`max_execution_time` at 30 s and `post_max_size` at 8 MB.
 
-### 4.2 Pull (incremental)
+**Idempotency is mandatory.** The client will retry after a timeout that
+actually succeeded. `INSERT ... ON DUPLICATE KEY UPDATE` on `uuid` makes a
+replayed batch harmless — return `DUPLICATE`, not an error.
+
+### 4.2 Pull
 
 ```
-GET /sync/changes?shop_id=…&since=<pullCursor>&limit=500
+GET /api/v1/pull?since=<server_seq>&limit=500
 ```
 
-The server returns rows with `server_updated_at > since`, ordered, plus a new
-cursor. Apply inside one Room transaction per batch. Repeat until the server
-reports no more.
-
-**Use a server-issued cursor, not a client timestamp.** Device clocks in this
-market are frequently wrong by minutes to days — a phone that has never seen
-the internet may boot to 1970. Anything keyed on client time will silently skip
-or duplicate rows.
+Returns rows with `server_seq > since`, ordered by `server_seq`, plus
+`next_cursor`. Apply each batch in one Room transaction. Repeat until the
+server says there is no more.
 
 ### 4.3 Conflict resolution, per entity
 
-Conflicts are rarer than they look, because most POS data is append-only. Be
+Most POS data is append-only, so conflicts are rarer than they look. Be
 explicit anyway:
 
 | Entity | Rule | Why |
 |---|---|---|
-| `sales`, `sale_items` | **Append only, never conflicts.** UUID collision = same row | A completed sale is history. It cannot be edited |
-| `stock_movements` | **Append only.** Stock level is a *derived sum*, not a stored value | Two devices selling the same item must both decrement. Last-write-wins would lose a sale |
-| `products` | **Field-level merge**, last-write-wins per field by `updatedAt` | Owner edits the price on their phone while staff edits the name on the counter — both should survive |
-| `customers` | Field-level merge; `creditBalance` is **derived** from `credit_transactions` | Same reason as stock |
+| `sales`, `sale_items` | **Append only.** Same UUID = same row | A completed sale is history |
+| `stock_movements` | **Append only.** Stock is a *derived sum* | Two devices selling the same item must both decrement |
+| `products` | **Field-level merge**, last-write-wins per field | Owner edits price while staff edits name — both survive |
+| `customers` | Field merge; `creditBalance` **derived** | Same reason as stock |
 | `credit_transactions` | Append only | It is a ledger |
-| `expenses`, `purchases` | Append only; edits are field-merge | |
-| `staff`, permissions | **Server wins.** Only an owner device may write | Prevents a compromised counter phone granting itself access |
+| `expenses`, `purchases` | Append only; edits field-merge | |
+| `staff`, permissions | **Server wins.** Owner device only | Stops a compromised till granting itself access |
 | `business_profile` | Server wins, owner device may write | |
-| `notification_settings` | **Per device**, do not sync | The owner's phone and the till want different alerts |
-| `held_sales` | **Per device**, do not sync | A parked bill belongs to the counter it was parked at |
+| `notification_settings` | **Per device. Do not sync** | Owner's phone and the till want different alerts |
+| `held_sales` | **Per device. Do not sync** | A parked bill belongs to its counter |
+| `cash_register_shifts`, `cash_movements` | Per device; sync read-only to owner | A drawer belongs to one physical counter |
 | `audit_log` | Append only, never deleted | |
 
-**The critical insight: never sync a computed balance.** `product.currentStock`
-and `customer.creditBalance` must become derived values (`SUM` over their
-movement tables) or you will lose transactions. This is the single most common
-way POS sync systems silently corrupt data. If deriving on every read is too
-slow, cache the sum locally and recompute after each sync — but the movements
-remain the truth.
+**Never sync a computed balance.** `product.currentStock` and
+`customer.creditBalance` must become derived (`SUM` over their movement tables)
+or you will lose transactions. This is the single most common way POS sync
+systems silently corrupt data. If summing on every read is too slow, cache the
+total locally and recompute after each sync — but the movements stay the truth.
 
 ### 4.4 Ordering
 
-Sync in dependency order or you get foreign-key failures:
+Sync in dependency order or foreign keys will reject the batch:
 
 ```
-business_profile → staff → products → customers → suppliers
+shops → devices → business_profile → staff → products → customers → suppliers
   → sales → sale_items
   → credit_transactions → stock_movements → purchases → purchase_items
   → expenses → cash_shifts → cash_movements → audit_log
 ```
 
+### 4.5 Optional features and sync
+
+Every optional feature must degrade cleanly. A shop with the cash drawer off
+has no shifts; a shop with stock off has no movements. **The server must not
+assume any table is non-empty**, and pull must not fail because a shop has zero
+`cash_register_shifts`. Feature flags live on `business_profile` and sync with
+it, so a second device inherits the same simplified app.
+
 ---
 
-## 5. Scheduling and battery
+## 5. Scheduling
 
-Use **WorkManager**, not a foreground service and not a raw coroutine loop.
+**WorkManager**, not a foreground service and not a raw coroutine loop.
 
 ```kotlin
 PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
@@ -258,77 +419,84 @@ PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
     .build()
 ```
 
-Plus **expedited one-off syncs** on: sale completed, day closed, app
-backgrounded, and manual "Sync now". Fifteen minutes is the Android floor for
-periodic work — do not fight it.
+Plus expedited one-off syncs on: sale completed, day closed, app backgrounded,
+manual "Sync now". Fifteen minutes is the Android floor for periodic work — do
+not fight it.
 
-**Do not sync on every keystroke or every cart change.** A shop doing 300 sales
-a day should produce roughly 300 pushes, not 30,000.
+**Do not sync on every cart change.** 300 sales/day should mean ~300 pushes,
+not 30,000. On shared hosting that difference is the line between fine and
+suspended for resource abuse.
 
 ---
 
 ## 6. Limits, quotas and caching
 
-### 6.1 Enforce ceilings before the shop hits them
+### 6.1 Quotas
 
-A free tier that silently stops accepting writes is worse than no cloud at all.
-Define limits, show them, and degrade gracefully:
+A tier that silently stops accepting writes is worse than no cloud at all.
 
-| Limit | Suggested | Behaviour at the ceiling |
-|---|---|---|
-| Devices per shop | 3 free / 10 paid | Block the 4th at pairing, name the devices already using slots |
-| Rows synced per month | 50,000 free | Keep working locally; queue and warn |
-| Storage per shop | 100 MB free | Stop syncing images first, then old data |
-| Sync frequency | 15 min free / 5 min paid | Just a longer interval |
-| Retention in cloud | 12 months free | Older data stays on device; archive server-side |
-| Attachments | Paid only | |
+| Limit | Free | Paid | At the ceiling |
+|---|---|---|---|
+| Devices per shop | 3 | 10 | Block at pairing, name the devices using slots |
+| Rows/month | 50,000 | 500,000 | Keep working locally, queue, warn |
+| Storage | 100 MB | 1 GB | Stop syncing images first, then old data |
+| Sync interval | 15 min | 5 min | Just longer |
+| Cloud retention | 12 months | 5 years | Older stays on device, archived server-side |
 
-**Rule: exceeding a limit degrades sync, never selling.** If the quota is blown,
-the till keeps working offline and shows a banner. Never a modal, never a block.
+**Exceeding a limit degrades sync, never selling.** Banner, never a modal.
 
-### 6.2 Local database limits
+### 6.2 MySQL tuning
 
-SQLite handles this scale easily, but a phone that runs for five years does not:
+Shared hosting gives you 25–50 connections total, across every site on the box.
 
-- **Trim `audit_log` and `notifications`** to the newest ~500–2000 rows.
+- **No connection pool from the app.** Each request opens and closes one PDO
+  connection. Persistent connections on shared hosting exhaust the limit.
+- **`innodb_buffer_pool_size`** ≈ 50–70% of RAM on a VPS. Untouchable on shared.
+- **Batch inserts** — one multi-row `INSERT`, not 200 round trips.
+- **Index every `(shop_id, server_seq)`** pair. Pull is the hot query.
+- Watch `max_allowed_packet` (often 4–16 MB). Batch size 200 keeps you clear.
+- Add `LIMIT` to every query without exception.
+
+### 6.3 Local database limits
+
+SQLite handles this scale easily; a phone running five years does not.
+
+- **Trim `audit_log` and `notifications`** to the newest 500–2000 rows.
   (`trimNotifications` already does this; do the same for the audit log.)
-- **Archive sales older than 12 months** to a compressed table or a JSON export,
-  once confirmed synced.
-- **Vacuum monthly** via WorkManager. SQLite does not reclaim space on delete.
-- **Cap `sync_outbox`.** If it exceeds ~10,000 rows the device has been offline
-  far too long — warn the owner loudly rather than quietly accumulating.
-- Watch the row counts that actually grow: `sale_items` grows fastest, roughly
-  `sales × average basket size`.
+- **Archive sales older than 12 months** once confirmed synced.
+- **`VACUUM` monthly** via WorkManager — SQLite does not reclaim space on delete.
+- **Cap `sync_outbox`.** Past ~10,000 rows the device has been offline far too
+  long; warn loudly rather than silently accumulating.
+- `sale_items` grows fastest: roughly `sales × basket size`.
 
-### 6.3 Caching
+### 6.4 Caching
 
 | Layer | What | Invalidation |
 |---|---|---|
 | Room | Everything. The permanent cache | Never; it is the truth |
-| In-memory `StateFlow` | Products, customers, profile, permissions | Room `Flow` emits automatically |
+| In-memory `StateFlow` | Products, customers, profile, permissions | Room `Flow` emits |
 | Computed | Today's totals, low-stock counts | Recompute on the source flow |
-| Images | Product photos, on disk with Coil | LRU, capped at ~50 MB |
+| Images | Product photos on disk via Coil | LRU, ~50 MB cap |
+| Server | `ETag`/`If-None-Match` on pull | 304 when nothing changed |
 
 The app already caches correctly via Room `Flow` → `StateFlow`. **Do not add a
 network cache layer.** The offline database *is* the cache; a second one only
 creates a second thing to be stale.
 
-### 6.4 Payload economy
+### 6.5 Payload economy
 
 Shops pay for mobile data by the megabyte.
 
-- `gzip` every request and response.
-- Send **changed fields only** on update, not whole rows.
-- Never sync images on mobile data by default — Wi-Fi only, with an override.
-- Target: **a day's trading under 500 KB** for a typical shop.
+- `gzip` request and response bodies (`ob_gzhandler` or nginx `gzip on`).
+- Send **changed fields only** on update.
+- Images on Wi-Fi only by default.
+- Target: **a day's trading under 500 KB.**
 
 ---
 
 ## 7. Cloud availability as an optional feature
 
-The switch lives in Settings and defaults to **off**.
-
-### 7.1 States to design for
+Default **off**. The switch lives in Settings.
 
 | State | UI | Selling |
 |---|---|---|
@@ -340,29 +508,27 @@ The switch lives in Settings and defaults to **off**.
 | `ERROR` | "Could not save to cloud. Tap for help" | Normal |
 | `QUOTA` | "Cloud storage full" + upgrade path | Normal |
 
-Note the last column. **Selling is never affected by any sync state.** If a
-state you are adding would block a sale, you have designed it wrong.
+Note the last column. **If a state you are adding would block a sale, the
+design is wrong.**
 
-### 7.2 Pairing without accounts
+### 7.1 Pairing without accounts
 
-The shop has no email address and no password habits. Do not force an account.
+The shop has no email address and no password habits.
 
 ```
 Owner device:  Settings → Cloud backup → Turn on
-               → creates the shop, shows a 6-digit code valid for 10 minutes
+               → creates the shop, shows a 6-digit code valid 10 minutes
 New device:    Settings → Cloud backup → Join a shop → enter code
-               → server binds device to shop, issues a long-lived device token
-Owner device:  sees "Stock room phone wants to join" → Approve / Deny
+               → server issues a long-lived device token
+Owner device:  "Stock room phone wants to join" → Approve / Deny
 ```
 
-Store the device token in `EncryptedSharedPreferences`, never in Room. The
-owner must be able to revoke a device remotely — phones get lost and staff
-leave.
+Store the token in `EncryptedSharedPreferences`, never in Room. The owner must
+be able to revoke a device remotely — phones get lost and staff leave.
 
-### 7.3 Language
+### 7.2 Language
 
-Plain, in the same register as the rest of the app. Never "sync", "server",
-"conflict" or "API".
+Plain, matching the rest of the app. Never "sync", "server", "conflict", "API".
 
 | Instead of | Say |
 |---|---|
@@ -375,20 +541,28 @@ Plain, in the same register as the rest of the app. Never "sync", "server",
 
 ## 8. Security
 
-- **HTTPS only**, certificate pinning on the sync host.
-- **Row-level security keyed on `shop_id`.** A device token must be
-  structurally incapable of reading another shop's rows. Enforce in the
-  database, not in application code.
-- **Never sync PINs.** Not even hashed. PINs are device-local. If staff need to
-  sign in on a second device, the owner sets a PIN there.
-- **Encrypt at rest** on the server; consider SQLCipher on the device for shops
-  that want it.
-- **Audit every sync**: which device pushed what, when. Extend the existing
-  `audit_log`.
-- **Rate-limit per device** server-side. A buggy client in a retry loop must
-  not be able to take the backend down.
-- Data belongs to the shop: provide a full **export** (CSV/JSON) and a real
-  **delete my data** path.
+Self-hosting means the security is *yours*. None of this is optional.
+
+- **HTTPS only.** Let's Encrypt is free; most cPanel hosts have AutoSSL. Reject
+  plain HTTP at the server, and certificate-pin in the app.
+- **Every query filtered by `shop_id`**, taken from the authenticated token —
+  **never** from a request parameter. This is the whole tenancy boundary. One
+  missing `WHERE shop_id = ?` leaks one shop's takings to another.
+- **Prepared statements everywhere** (PDO with `emulate_prepares = false`).
+  Never concatenate SQL.
+- **Never sync PINs.** Not even hashed. PINs are device-local.
+- **Hash device tokens** (SHA-256) at rest. A database dump must not yield
+  working credentials.
+- **Rate-limit per device.** A client stuck in a retry loop must not be able to
+  take the server down. 60 requests/minute is generous.
+- **Automated MySQL backups**, `mysqldump` nightly to off-server storage, with
+  a **tested restore**. An untested backup is not a backup.
+- **A dedicated MySQL user** with only `SELECT, INSERT, UPDATE, DELETE` on the
+  one database. Never `root`, never `GRANT ALL`.
+- Keep the credentials outside the web root; on shared hosting that means above
+  `public_html`, never in a file the server might serve as text.
+- Provide a real **export** and a real **delete my data** path. The data belongs
+  to the shop.
 
 ---
 
@@ -400,12 +574,13 @@ devices.
 
 ### 9.1 What exists today
 
-- 13 alert types, each with a permission gate, an importance, and a default.
-- A master switch, per-type switches, large-sale and large-discount thresholds,
-  and quiet hours that correctly handle a window crossing midnight.
+- 13 alert types, each permission-gated, with an importance and a default.
+- Master switch, per-type switches, large-sale and large-discount thresholds,
+  quiet hours handling a window crossing midnight.
 - Alerts are **recorded** even when quiet hours suppress the buzz.
-- Only alerts the signed-in person is entitled to see are shown.
-- Stored in the `notifications` table, trimmed to the newest 500.
+- Only alerts the signed-in person may see are shown; types for features the
+  shop has switched off are hidden entirely.
+- Stored in `notifications`, trimmed to the newest 500.
 
 ### 9.2 What cross-device adds
 
@@ -417,27 +592,37 @@ Counter device: sale completes
   → enqueues a sync push
 Server: receives the sale
   → evaluates the OWNER's notification settings, not the till's
-  → sends FCM to the owner's registered devices
-Owner phone: system notification, even though the app is closed
+  → sends a push to the owner's registered devices
+Owner phone: system notification, even with the app closed
 ```
 
-Requirements:
+**Delivery without Firebase is the one genuinely hard part of self-hosting.**
+Android has no built-in push channel; FCM *is* the mechanism, and Google
+provides it free with no server dependency beyond an HTTP call. Options:
 
-1. **Firebase Cloud Messaging** for delivery. Register a device token per
-   device, tied to the staff member signed in there.
-2. **Server-side evaluation.** The owner's thresholds and quiet hours live with
-   the owner's device record, not the till's. A till must not decide what the
-   owner hears.
-3. **Deduplicate.** If the owner is physically at the counter, they should get
-   one notification, not one local and one push. Suppress the push when the
-   same `shop_id` + `device_id` generated it.
-4. **Android 13+ requires `POST_NOTIFICATIONS`.** Ask for it at a moment that
-   makes sense — when the owner first switches an alert on, not at first launch.
-5. **Notification channels**, one per importance: `HIGH` (refunds, cash
-   shortages, blocked attempts), `NORMAL`, `QUIET`. This lets the owner tune
-   loudness in Android settings, which is where they will look.
-6. **Batch the noisy ones.** "23 sales today, Rs. 45,600" beats 23 buzzes.
-   Digest anything `QUIET`; deliver `HIGH` immediately.
+| Option | Reality |
+|---|---|
+| **FCM (HTTP v1)** | Free, reliable, works when the app is closed. Your server calls Google's endpoint; shop data stays on your server — only a title and body transit. **Recommended.** |
+| **WebSockets / long poll** | No third party, but a socket cannot survive Doze. The owner will miss overnight alerts. Fine as a *supplement* while the app is open |
+| **Periodic pull** | WorkManager every 15 min, notify locally. No third party at all, but up to 15 minutes late and it costs battery |
+| **SMS gateway** | Costs money per message; genuinely useful for `CASH_SHORTAGE` only |
+
+**Recommendation: FCM for delivery, with a 15-minute WorkManager pull as the
+fallback** for owners who want zero Google involvement. Using FCM for the
+*notification envelope* does not compromise self-hosting: put no shop figures in
+the payload, just "open the app", and let the app fetch details from your server.
+
+Also required:
+
+1. **Server-side evaluation.** The owner's thresholds and quiet hours live with
+   the owner's device record. A till must not decide what the owner hears.
+2. **Deduplicate.** If the owner is at the counter, one notification, not two.
+   Suppress the push when the same device generated it.
+3. **Android 13+ needs `POST_NOTIFICATIONS`.** Ask when the owner first enables
+   an alert, not at first launch.
+4. **Notification channels** per importance — `HIGH`, `NORMAL`, `QUIET` — so
+   the owner can tune loudness in Android settings, where they will look.
+5. **Batch the noisy ones.** "23 sales today, Rs. 45,600" beats 23 buzzes.
 
 ### 9.3 Additional cross-device alert types
 
@@ -446,52 +631,54 @@ DEVICE_JOINED       // "Stock room phone joined your shop"
 DEVICE_OFFLINE      // "Counter phone has not synced for 3 hours"
 SYNC_FAILING        // "Sales are not reaching the cloud"
 DAILY_SUMMARY       // scheduled digest, 8pm
-UNUSUAL_ACTIVITY    // sales outside normal hours, big voids
+UNUSUAL_ACTIVITY    // sales outside normal hours, large voids
 ```
 
-`DEVICE_OFFLINE` matters more than it looks: it is how an owner finds out the
-shop phone died before they lose a day of records.
+`DEVICE_OFFLINE` matters more than it looks: it is how an owner learns the shop
+phone died *before* they lose a day of records.
 
 ---
 
 ## 10. Build order
 
-Do not attempt this in one pass. Each phase must ship working.
+Each phase must ship working.
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| **0** | **Real Room migrations.** Remove `fallbackToDestructiveMigration` | An upgrade preserves data. **Blocks everything else** |
-| 1 | UUIDs, sync columns, outbox table, writes populate the outbox | Outbox fills correctly; app behaves identically |
-| 2 | Backend: schema, RLS, `/sync/push`, `/sync/changes` | Curl round-trips a sale |
-| 3 | Device pairing, tokens, revocation | Two devices bound to one shop |
-| 4 | Push only. One device up, others read-only | Sales appear in the cloud |
-| 5 | Pull + merge. Derived balances for stock and credit | Two tills sell the same item; stock is correct |
+| **0** | **Real Room migrations.** Remove `fallbackToDestructiveMigration` | An upgrade preserves data. **Blocks everything** |
+| 1 | UUIDs, sync columns, outbox; writes populate the outbox | Outbox fills; app behaves identically |
+| 2 | MySQL schema, PHP API skeleton, HTTPS, `/status` | `curl` returns healthy |
+| 3 | Pairing, tokens, revocation | Two devices bound to one shop |
+| 4 | Push only. One device up, others read-only | Sales appear in MySQL |
+| 5 | Pull + merge. Derived stock and credit balances | Two tills sell one item; stock is right |
 | 6 | Conflict rules per §4.3, plus a conflict log the owner can read | Deliberate conflicts resolve as documented |
-| 7 | Quotas, limits, degradation, retention | Ceilings behave gracefully |
-| 8 | FCM, server-side notification evaluation, channels, digests | Owner is notified with the app closed |
-| 9 | Export, delete-my-data, remote device revocation | |
+| 7 | Quotas, retention, archival, backups with a tested restore | Ceilings degrade gracefully |
+| 8 | FCM + server-side evaluation, channels, digests | Owner notified with the app closed |
+| 9 | Export, delete-my-data, remote revocation | |
 
 **Phase 0 is a hard blocker.** The database currently drops every table on a
-version bump. Shipping cloud sync on top of that would destroy real shops' data
-on the first update.
+version bump. Shipping sync on top of that would destroy real shops' data on
+the first update.
 
 ---
 
 ## 11. Testing
 
-The failures that matter are the ones that only appear in bad conditions.
+The failures that matter only appear in bad conditions.
 
 - **Two devices, both offline, both sell the last unit.** Stock must not go to
-  `-1` silently; the merge must produce a real number and flag the oversell.
-- **Clock skew.** Set one device to 1970 and one to 2030. Sync must not lose
-  rows.
-- **Kill mid-sync.** Force-stop during a push. No duplicates, no lost rows.
-- **Offline for two weeks**, then reconnect. Batching must not time out.
+  `-1` silently; the merge must flag the oversell.
+- **Clock skew.** One device at 1970, one at 2030. No rows lost.
+- **Kill mid-sync.** Force-stop during a push. No duplicates, no loss.
+- **Offline two weeks**, then reconnect. Batching must not time out.
 - **Airplane mode, 100 sales.** Everything queues, nothing blocks.
 - **Quota exceeded mid-day.** Selling continues.
-- **Token revoked** while the device is offline. Graceful re-pair, no data loss.
-- **Duplicate UUID** from a cloned install (owners do restore backups to new
-  phones). Server must reject cleanly.
+- **Token revoked while offline.** Graceful re-pair, no data loss.
+- **Duplicate UUID** from a restored backup on a new phone. Clean rejection.
+- **MySQL down.** The app must show "could not save" and keep selling.
+- **Shared host kills a request at 30 s.** Partial batch must not corrupt state.
+- **Restore from `mysqldump` into an empty database.** Do this before launch,
+  not after an incident.
 
 Instrument in production: outbox depth, sync duration, conflict rate, failure
 rate by error type. A rising conflict rate means a merge rule is wrong.
@@ -500,13 +687,14 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 
 ## 12. Decisions to make before writing code
 
-1. **Backend**: Supabase, or self-host? (Recommendation: Supabase.)
-2. **UUID migration**: full switch, or UUID alongside the existing `Long` keys?
-3. **Pricing**: is cloud free, or the paid tier? This sets the quota numbers.
-4. **Region**: `ap-south-1` (Mumbai) is closest to Sri Lanka.
-5. **Multi-shop owners**: does one owner run several branches? Changes the
-   tenancy model significantly — decide now, not later.
-6. **Retention**: how long does the cloud keep data for a shop that stops paying?
+1. **Shared hosting or VPS?** (Shared + PHP to start is fine and cheapest.)
+2. **Server language?** PHP 8.2 runs everywhere; Node/Kotlin need a VPS.
+3. **UUID migration**: full switch, or UUID alongside the existing `Long` keys?
+4. **FCM, or pull-only?** Affects how quickly an owner learns about a refund.
+5. **Pricing**: is cloud free or paid? This sets the quota numbers.
+6. **Region**: Singapore or Mumbai for latency to Sri Lanka. Avoid US/EU hosts.
+7. **Multi-branch owners**: does one owner run several shops? Changes tenancy
+   significantly — decide now, not later.
 
 ---
 
@@ -519,40 +707,49 @@ rate by error type. A rising conflict rate means a merge rule is wrong.
 > at Phase 0 (real Room migrations — the database currently uses
 > `fallbackToDestructiveMigration`, which would destroy live shop data).
 >
+> Hosting is **self-hosted: our own VPS or shared hosting, our own MySQL 8**.
+> No Firebase, Supabase or any third-party backend-as-a-service for data. FCM
+> may be used for the notification envelope only, carrying no shop figures.
+>
 > Absolute constraints:
 > - Room stays the source of truth. No UI code path may await the network.
 > - A sale must complete in under two seconds with networking disabled.
 > - Sync is optional and defaults to off; with it off the app is fully working.
-> - Never sync a computed balance. Stock and credit are derived from their
->   movement tables.
-> - Never sync staff PINs.
+> - Every money column is `DECIMAL(12,2)` in MySQL. Never `FLOAT`.
+> - Incremental pull uses a server-issued sequence, never a device clock.
+> - Every query is filtered by `shop_id` from the authenticated token, never
+>   from a request parameter.
+> - Never sync a computed balance. Stock and credit derive from their movement
+>   tables. Never sync staff PINs.
+> - Optional features (stock, credit, cash drawer, staff) may each be off. No
+>   table may be assumed non-empty.
 > - All user-facing wording is plain language: no "sync", "server", "conflict"
 >   or "API". The reader owns a grocery shop, not a laptop.
 >
-> Work in vertical slices, each independently shippable. After each phase,
-> state plainly what is tested and what is not.
+> Work in vertical slices, each independently shippable. After each phase, state
+> plainly what is tested and what is not.
 
 ---
 
-## Appendix: current schema reference
+## Appendix A: current schema
 
-Entities as of DB v4, in `data/model/Entities.kt` and
+Entities as of Room v5, in `data/model/Entities.kt` and
 `data/model/Notifications.kt`:
 
 ```
-business_profile      1 row, shop settings, printer config, receipt design
+business_profile      1 row: shop settings, printer, receipt design, feature flags
 products              catalogue, stamped with shopType for category isolation
 sales                 completed bills (immutable)
-sale_items            lines on a bill, with unitPrice as actually sold
+sale_items            bill lines, with unitPrice as actually sold
 customers             credit book; creditBalance MUST become derived
 credit_transactions   the credit ledger (append only)
 suppliers             who you buy from
 purchases             supplier bills
-purchase_items        lines on a supplier bill
+purchase_items        supplier bill lines
 stock_movements       every stock change (append only) — the truth for stock
 expenses              rent, electricity, transport
 staff                 name, role, PIN, per-person permission overrides
-cash_register_shifts  day open / close
+cash_register_shifts  day open / close (only if cashDrawerEnabled)
 cash_movements        cash in / out during a shift
 held_sales            parked bills (device-local, do not sync)
 audit_log             who did what (append only)
@@ -560,7 +757,27 @@ notifications         alert history
 notification_settings per-device alert preferences (do not sync)
 ```
 
-**Note:** `products.currentStock` and `customers.creditBalance` are currently
-stored values. Both must become derived from `stock_movements` and
-`credit_transactions` respectively before multi-device sync. This is the single
-most important schema change in this document.
+## Appendix B: optional features
+
+Each is independently switchable and affects what syncs:
+
+| Flag on `business_profile` | Off means | Sync impact |
+|---|---|---|
+| `trackStock` | No stock numbers anywhere | `stock_movements` stays empty |
+| `creditEnabled` | Everyone pays now | `credit_transactions` stays empty |
+| `cashDrawerEnabled` | No open/close routine | `cash_register_shifts` stays empty |
+| `staffEnabled` | Solo owner, no PIN | `staff` has 0–1 rows |
+
+**The server must treat every one of these tables as legitimately empty.**
+
+## Appendix C: two changes needed before any sync work
+
+1. **`fallbackToDestructiveMigration` must go.** Every schema change so far has
+   wiped the database. That is acceptable in development and catastrophic once
+   a shop is live.
+
+2. **`products.currentStock` and `customers.creditBalance` are stored values.**
+   Both must become derived from `stock_movements` and `credit_transactions`.
+   If two tills sell the last unit offline, last-write-wins on a stored balance
+   loses one of the sales. This is the most important schema change in this
+   document and the cheapest to make now.

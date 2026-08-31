@@ -15,6 +15,12 @@ data class BusinessProfileEntity(
     val managementLevel: String = "BILL_STOCK", // JUST_BILL, BILL_STOCK, MANAGE_BUSINESS
     val trackStock: Boolean = true,
     val creditEnabled: Boolean = true,
+    /**
+     * Whether this shop runs a counted cash drawer with an open/close routine.
+     * Plenty of small shops just put money in a box and never reconcile a
+     * float, so the whole day-open / day-close flow is optional.
+     */
+    val cashDrawerEnabled: Boolean = false,
     val staffEnabled: Boolean = false,
     val receiptStyle: String = "Modern", // Minimal, Classic, Detailed, Modern
     val receiptFooter: String = "Thank you! Please come again.",

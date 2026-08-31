@@ -98,6 +98,8 @@ fun HubMenuScreen(
 
     val tracksStock = profile?.trackStock == true
     val creditEnabled = profile?.creditEnabled == true
+    // Not every shop counts a float in and out of a drawer.
+    val usesCashDrawer = profile?.cashDrawerEnabled == true
     val customersOwing = customers.count { it.creditBalance > 0 }
     val alertCount = lowStock.size + customersOwing
     val printerSubtitle = when {
@@ -214,7 +216,7 @@ fun HubMenuScreen(
                 }
             }
 
-            if (permissions.can(Permission.MANAGE_CASH)) {
+            if (usesCashDrawer && permissions.can(Permission.MANAGE_CASH)) {
                 item {
                     HubActionCard(
                         title = "Cash drawer",
@@ -263,7 +265,13 @@ fun HubMenuScreen(
                 item {
                     HubActionCard(
                         title = "My team",
-                        subtitle = "Add staff and choose what each person can do",
+                        subtitle = if (profile?.staffEnabled == true) {
+                            "Add staff and choose what each person can do"
+                        } else {
+                            // Solo shops keep the entry as the way to discover
+                            // the feature, but the wording must not imply a team.
+                            "Working alone. Tap to start adding staff."
+                        },
                         icon = Icons.Default.Badge,
                         onClick = { onSelectDestination(MoreDestination.STAFF) }
                     )
@@ -935,6 +943,19 @@ fun CashRegisterScreen(
         return
     }
 
+    // The shop said it does not run a counted drawer. Explain rather than
+    // showing an open/close routine they have no use for.
+    val cashProfile by viewModel.profile.collectAsState()
+    if (cashProfile?.cashDrawerEnabled != true) {
+        com.example.ui.components.LockedScreenNotice(
+            message = "This shop does not use a cash drawer count. If you want to " +
+                "count your float at the start and end of each day, turn on " +
+                "\"Cash drawer\" in Settings.",
+            onBack = onBack
+        )
+        return
+    }
+
     val shift by viewModel.currentShift.collectAsState()
     var showCashMovementDialog by remember { mutableStateOf(false) }
     var movementType by remember { mutableStateOf("CASH_IN") }
@@ -1172,13 +1193,28 @@ fun StaffScreen(
                 )
                 Text(
                     "Nothing is locked and no PIN is needed. If someone starts helping " +
-                        "you at the counter, turn on \"I have staff\" in Settings and you " +
-                        "can decide exactly what they are allowed to do.",
+                        "you at the counter, switch this on and you can decide exactly " +
+                        "what each person is allowed to do.",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(top = 6.dp)
                 )
+                Spacer(modifier = Modifier.height(18.dp))
+                // Without this the hub card is a dead end: it tells a solo owner
+                // to add staff and then offers no way to do it.
+                Button(
+                    onClick = {
+                        val current = profile ?: BusinessProfileEntity()
+                        viewModel.saveBusinessProfile(current.copy(staffEnabled = true))
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("I have staff now", fontWeight = FontWeight.Bold)
+                }
             }
             return@Scaffold
         }

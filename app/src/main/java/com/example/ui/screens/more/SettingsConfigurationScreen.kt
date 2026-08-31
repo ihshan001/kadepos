@@ -103,6 +103,7 @@ fun SettingsConfigurationScreen(
     // Operations
     var trackStock by remember(profile) { mutableStateOf(profile?.trackStock ?: true) }
     var creditEnabled by remember(profile) { mutableStateOf(profile?.creditEnabled ?: true) }
+    var cashDrawerEnabled by remember(profile) { mutableStateOf(profile?.cashDrawerEnabled ?: false) }
     var staffEnabled by remember(profile) { mutableStateOf(profile?.staffEnabled ?: true) }
     var defaultLowStockThreshold by remember { mutableStateOf("5") }
     var allowNegativeStock by remember { mutableStateOf(false) }
@@ -162,6 +163,7 @@ fun SettingsConfigurationScreen(
                                     receiptStyle = receiptStyle,
                                     trackStock = trackStock,
                                     creditEnabled = creditEnabled,
+                                    cashDrawerEnabled = cashDrawerEnabled,
                                     staffEnabled = staffEnabled
                                 )
                             )
@@ -627,6 +629,26 @@ fun SettingsConfigurationScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Cash drawer count", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                                Text(
+                                    "Count your float at the start of the day and again when " +
+                                        "you close, so the app can tell you if cash is missing. " +
+                                        "Leave this off if you just keep money in a box.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(checked = cashDrawerEnabled, onCheckedChange = { cashDrawerEnabled = it })
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Column {
                                 Text("Require Manager PIN for Refunds", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
                                 Text("Prevent unauthorized invoice cancellations/voids", fontSize = 11.sp, color = TextSecondary)
@@ -768,6 +790,7 @@ fun SettingsConfigurationScreen(
                                 receiptStyle = receiptStyle,
                                 trackStock = trackStock,
                                 creditEnabled = creditEnabled,
+                                cashDrawerEnabled = cashDrawerEnabled,
                                 staffEnabled = staffEnabled
                             )
                         )

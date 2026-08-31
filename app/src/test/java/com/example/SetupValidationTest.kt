@@ -2,6 +2,7 @@ package com.example
 
 import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.NotificationType
+import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.Permission
 import com.example.data.model.PermissionSet
 import com.example.data.model.PermissionOverrides
@@ -379,5 +380,47 @@ class SetupValidationTest {
   fun `an owner sees every kind of alert`() {
     val owner = PermissionSet.of(StaffRole.OWNER)
     assertEquals(NotificationType.entries.size, NotificationType.visibleTo(owner).size)
+  }
+
+  // --- Optional features ---------------------------------------------------
+
+  @Test
+  fun `a new shop starts with no cash drawer routine`() {
+    // Most small shops just put money in a box. Opt in, do not opt out.
+    assertFalse(BusinessProfileEntity().cashDrawerEnabled)
+  }
+
+  @Test
+  fun `every optional feature can be switched off independently`() {
+    val simplest = BusinessProfileEntity(
+      trackStock = false,
+      creditEnabled = false,
+      cashDrawerEnabled = false,
+      staffEnabled = false
+    )
+    assertFalse(simplest.trackStock)
+    assertFalse(simplest.creditEnabled)
+    assertFalse(simplest.cashDrawerEnabled)
+    assertFalse(simplest.staffEnabled)
+
+    val fullest = BusinessProfileEntity(
+      trackStock = true,
+      creditEnabled = true,
+      cashDrawerEnabled = true,
+      staffEnabled = true
+    )
+    assertTrue(fullest.trackStock)
+    assertTrue(fullest.creditEnabled)
+    assertTrue(fullest.cashDrawerEnabled)
+    assertTrue(fullest.staffEnabled)
+  }
+
+  @Test
+  fun `drawer alerts exist but a shop without a drawer simply never fires them`() {
+    // The alert types stay defined; the UI hides them and nothing raises them.
+    val owner = PermissionSet.of(StaffRole.OWNER)
+    val visible = NotificationType.visibleTo(owner)
+    assertTrue(visible.contains(NotificationType.DAY_CLOSED))
+    assertTrue(visible.contains(NotificationType.CASH_SHORTAGE))
   }
 }

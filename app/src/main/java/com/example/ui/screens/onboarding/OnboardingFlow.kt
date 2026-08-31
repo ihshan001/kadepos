@@ -63,6 +63,7 @@ data class SetupDraft(
     val loadStarterItems: Boolean = true,
     val trackStock: Boolean? = null,
     val creditEnabled: Boolean? = null,
+    val cashDrawerEnabled: Boolean? = null,
     val hasStaff: Boolean? = null,
     val ownerPin: String = "",
     val ownerPinConfirm: String = "",
@@ -150,6 +151,7 @@ fun OnboardingFlow(
                             shopTypeKey = draft.shopTypeKey,
                             trackStock = draft.trackStock == true,
                             creditEnabled = draft.creditEnabled == true,
+                            cashDrawerEnabled = draft.cashDrawerEnabled == true,
                             staffEnabled = draft.hasStaff == true,
                             managementLevel = when {
                                 draft.trackStock == true && draft.hasStaff == true -> "MANAGE_BUSINESS"
@@ -460,15 +462,17 @@ private fun HowYouWorkStep(
     onBack: () -> Unit,
     onNext: () -> Unit
 ) {
-    val answered = draft.trackStock != null && draft.creditEnabled != null
+    val answered = draft.trackStock != null &&
+        draft.creditEnabled != null &&
+        draft.cashDrawerEnabled != null
 
     StepScaffold(
         step = 4,
         title = "How do you work?",
-        subtitle = "Two quick questions so the app shows only what you need.",
+        subtitle = "A few quick questions so the app shows only what you need.",
         onBack = onBack,
         canContinue = answered,
-        blockedReason = "Answer both questions to continue",
+        blockedReason = "Answer all three questions to continue",
         onContinue = onNext,
         testTag = "continue_how_you_work"
     ) {
@@ -507,6 +511,26 @@ private fun HowYouWorkStep(
                 isSelected = draft.creditEnabled == false,
                 onClick = { onChange(draft.copy(creditEnabled = false)) },
                 modifier = Modifier.testTag("credit_no")
+            )
+        }
+
+        QuestionBlock("Do you count the money in your drawer each day?") {
+            ChoiceCard(
+                title = "Yes, I count it",
+                subtitle = "Count the float when you open and again when you close, " +
+                    "so the app can tell you if cash is missing",
+                icon = Icons.Default.PointOfSale,
+                isSelected = draft.cashDrawerEnabled == true,
+                onClick = { onChange(draft.copy(cashDrawerEnabled = true)) },
+                modifier = Modifier.testTag("drawer_yes")
+            )
+            ChoiceCard(
+                title = "No, money just goes in the box",
+                subtitle = "Simplest option — no opening or closing routine",
+                icon = Icons.Default.Savings,
+                isSelected = draft.cashDrawerEnabled == false,
+                onClick = { onChange(draft.copy(cashDrawerEnabled = false)) },
+                modifier = Modifier.testTag("drawer_no")
             )
         }
     }
@@ -766,6 +790,11 @@ private fun ReadyStep(
                         Icons.Default.MenuBook,
                         "Credit book",
                         if (draft.creditEnabled == true) "On" else "Off"
+                    )
+                    SummaryLine(
+                        Icons.Default.PointOfSale,
+                        "Cash drawer count",
+                        if (draft.cashDrawerEnabled == true) "On" else "Off"
                     )
                     SummaryLine(
                         Icons.Default.Groups,
@@ -1041,7 +1070,7 @@ private val SetupDraftSaver = androidx.compose.runtime.saveable.listSaver<SetupD
             it.businessName, it.ownerName, it.phone, it.address, it.shopTypeKey,
             it.loadStarterItems, it.trackStock, it.creditEnabled, it.hasStaff,
             it.ownerPin, it.ownerPinConfirm, it.usesPrinter, it.paperWidth,
-            it.language, it.receiptFooter
+            it.language, it.receiptFooter, it.cashDrawerEnabled
         )
     },
     restore = {
@@ -1060,7 +1089,8 @@ private val SetupDraftSaver = androidx.compose.runtime.saveable.listSaver<SetupD
             usesPrinter = it[11] as Boolean?,
             paperWidth = it[12] as String,
             language = it[13] as String,
-            receiptFooter = it[14] as String
+            receiptFooter = it[14] as String,
+            cashDrawerEnabled = it[15] as Boolean?
         )
     }
 )

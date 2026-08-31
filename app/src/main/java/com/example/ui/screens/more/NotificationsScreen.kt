@@ -45,6 +45,12 @@ fun NotificationsScreen(
     val settings by viewModel.notificationSettings.collectAsState()
     val permissions by viewModel.permissions.collectAsState()
     val unread by viewModel.unreadNotificationCount.collectAsState()
+    val profile by viewModel.profile.collectAsState()
+
+    val usesCashDrawer = profile?.cashDrawerEnabled == true
+    val tracksStock = profile?.trackStock == true
+    val creditEnabled = profile?.creditEnabled == true
+    val hasStaff = profile?.staffEnabled == true
 
     var selectedTab by remember { mutableStateOf(0) }
 
@@ -126,7 +132,20 @@ fun NotificationsScreen(
             } else {
                 NotificationPreferences(
                     settings = settings,
-                    visibleTypes = NotificationType.visibleTo(permissions),
+                    // Hide alerts for features this shop does not use: no point
+                    // offering "cash does not match" to a shop with no drawer count.
+                    visibleTypes = NotificationType.visibleTo(permissions).filter { type ->
+                        when (type) {
+                            NotificationType.DAY_CLOSED,
+                            NotificationType.CASH_SHORTAGE -> usesCashDrawer
+                            NotificationType.LOW_STOCK,
+                            NotificationType.OUT_OF_STOCK -> tracksStock
+                            NotificationType.CREDIT_GIVEN,
+                            NotificationType.CREDIT_LIMIT -> creditEnabled
+                            NotificationType.STAFF_SIGN_IN -> hasStaff
+                            else -> true
+                        }
+                    },
                     onMaster = { viewModel.setNotificationsEnabled(it) },
                     onType = { type, on -> viewModel.setNotificationType(type, on) },
                     onThresholds = { sale, disc -> viewModel.setNotificationThresholds(sale, disc) },
