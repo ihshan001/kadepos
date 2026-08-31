@@ -224,7 +224,7 @@ fun HubMenuScreen(
                 }
             }
 
-            if (permissions.can(Permission.VIEW_AUDIT_LOG)) {
+            if (permissions.can(Permission.VIEW_AUDIT)) {
                 item {
                     HubActionCard(
                         title = "Activity log",
@@ -1272,9 +1272,9 @@ fun ActivityLogScreen(
     val entries by viewModel.auditLog.collectAsState()
     val permissions by viewModel.permissions.collectAsState()
 
-    if (!permissions.can(Permission.VIEW_AUDIT_LOG)) {
+    if (!permissions.can(Permission.VIEW_AUDIT)) {
         com.example.ui.components.LockedScreenNotice(
-            message = permissions.denialMessage(Permission.VIEW_AUDIT_LOG),
+            message = permissions.denialMessage(Permission.VIEW_AUDIT),
             onBack = onBack
         )
         return

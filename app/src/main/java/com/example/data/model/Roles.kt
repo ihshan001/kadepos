@@ -18,6 +18,7 @@ enum class Permission(val label: String, val description: String) {
     MANAGE_SUPPLIERS("Manage suppliers", "Add suppliers and record purchases"),
     VIEW_REPORTS("See reports", "Open sales and business reports"),
     MANAGE_CASH("Handle cash drawer", "Open/close the day, cash in and cash out"),
+    MANAGE_EXPENSES("Record expenses", "Add and edit shop expenses like rent and electricity"),
     MANAGE_STAFF("Manage team", "Add staff and change what they can do"),
     MANAGE_SETTINGS("Change settings", "Business details, receipt and printer setup"),
     VIEW_AUDIT("See activity log", "View the record of who did what")
@@ -56,6 +57,7 @@ enum class StaffRole(
             Permission.MANAGE_SUPPLIERS,
             Permission.VIEW_REPORTS,
             Permission.MANAGE_CASH,
+            Permission.MANAGE_EXPENSES,
             Permission.VIEW_AUDIT
         )
     ),
