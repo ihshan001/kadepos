@@ -69,6 +69,7 @@ fun MoreManagementHubScreen(
                 onNavigateToDestination = { dest -> onSelectDestination(dest) }
             )
             MoreDestination.SETTINGS -> SettingsConfigurationScreen(viewModel = viewModel, onBack = onBackToHub)
+            MoreDestination.CLOUD -> CloudBackupScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.PRINTER -> com.example.ui.screens.printer.PrinterSetupScreen(
                 viewModel = viewModel,
                 profile = viewModel.profile.collectAsState().value,
@@ -95,6 +96,7 @@ fun HubMenuScreen(
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val printerConnected by viewModel.isPrinterConnected.collectAsState()
     val unreadAlerts by viewModel.unreadNotificationCount.collectAsState()
+    val cloudSettings by viewModel.cloudSettings.collectAsState()
 
     val tracksStock = profile?.trackStock == true
     val creditEnabled = profile?.creditEnabled == true
@@ -285,6 +287,21 @@ fun HubMenuScreen(
                         subtitle = "Name, address, phone, what prints on the bill",
                         icon = Icons.Default.Settings,
                         onClick = { onSelectDestination(MoreDestination.SETTINGS) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_SETTINGS) && cloudSettings?.providerEnabled == true) {
+                item {
+                    HubActionCard(
+                        title = "Backup & Cloud",
+                        subtitle = if (cloudSettings?.ownerGmail.isNullOrBlank()) {
+                            "Connect a Google account to keep a safe copy"
+                        } else {
+                            "Connected to ${cloudSettings?.ownerGmail}"
+                        },
+                        icon = Icons.Default.Cloud,
+                        onClick = { onSelectDestination(MoreDestination.CLOUD) }
                     )
                 }
             }

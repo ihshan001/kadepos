@@ -3,6 +3,10 @@ package com.example.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.cloud.CloudBackupManager
+import com.example.data.cloud.CloudSettings
+import com.example.data.cloud.CloudSettingsRepository
+import com.example.data.cloud.CloudSyncScheduler
 import com.example.data.db.PosDatabase
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
@@ -41,6 +45,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class CartItem(
     val productId: Long? = null,
@@ -90,12 +96,22 @@ enum class MoreDestination {
     ALERTS,
     PRINTER,
     ACTIVITY_LOG,
+    CLOUD,
     SETTINGS
 }
 
 class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: PosRepository
+
+    private val cloudRepo = CloudSettingsRepository(application)
+    private val cloudBackup = CloudBackupManager(application)
+    private val _cloudSettings = MutableStateFlow(cloudRepo.load())
+    val cloudSettings: StateFlow<CloudSettings> = _cloudSettings.asStateFlow()
+
+    /** Non-persistent in-memory flag while this ViewModel lives. */
+    var isProviderUnlocked: Boolean = false
+        private set
 
     /** Real Bluetooth / Wi-Fi thermal printing. */
     val printerService = PrinterService(application)
@@ -135,6 +151,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+
+        // Keep the optional cloud feature in step with the provider policy.
+        refreshCloud()
     }
 
     val profile: StateFlow<BusinessProfileEntity?> = repository.businessProfile.stateIn(
@@ -2045,4 +2064,111 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Cloud backup / Google Drive (per-device, provider-controlled)
+    // -----------------------------------------------------------------------
+
+    /** Re-reads the provider policy and keeps the hourly worker in step. */
+    fun refreshCloud() {
+        val settings = cloudRepo.load()
+        _cloudSettings.value = settings
+        if (settings.providerEnabled && settings.hourlySyncEnabled) {
+            CloudSyncScheduler.schedule(application)
+        } else if (!settings.providerEnabled) {
+            CloudSyncScheduler.cancel(application)
+        }
+    }
+
+    /** Makes a rolling local backup copy of the whole shop database. */
+    fun backupNow() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val deviceName = profile.value?.name.orEmpty().ifBlank { "counter" }
+            val result = cloudBackup.createBackup(deviceName)
+            val updated = cloudRepo.update {
+                it.copy(
+                    lastBackupAt = System.currentTimeMillis(),
+                    lastBackupFile = result.file?.name.orEmpty(),
+                    lastError = if (result.file == null) result.message else ""
+                )
+            }
+            _cloudSettings.value = updated
+            withContext(Dispatchers.Main) {
+                showMessage(if (result.file != null) "Backup saved on this device" else "Backup could not be created")
+            }
+        }
+    }
+
+    /** Queues a one-off per-device backup/upload to Google Drive. */
+    fun syncNow() {
+        val settings = _cloudSettings.value
+        if (!settings.providerEnabled) {
+            showMessage("Ask your POS provider to activate cloud backup first")
+            return
+        }
+        if (settings.ownerGmail.isBlank()) {
+            showMessage("Connect a Google account before syncing")
+            return
+        }
+        CloudSyncScheduler.syncNow(application)
+        showMessage("Sync queued. It runs as soon as this phone has data.")
+    }
+
+    /** Owner-visible action: choose the Gmail that receives this device's backups. */
+    fun setOwnerGmail(email: String) {
+        val clean = email.trim()
+        if (clean.isBlank()) return
+        val updated = cloudRepo.update {
+            it.copy(
+                ownerGmail = clean,
+                accountConnected = true,
+                lastError = ""
+            )
+        }
+        _cloudSettings.value = updated
+        if (updated.providerEnabled && updated.hourlySyncEnabled) {
+            CloudSyncScheduler.schedule(application)
+        }
+        showMessage("Google account connected for backup")
+        audit("SETTINGS", "Connected Google account ${clean.take(6)}… for backup", 0.0)
+    }
+
+    /** Providers only. Writes the master policy/access code. */
+    fun saveProviderCloud(
+        enabled: Boolean,
+        providerEmail: String,
+        hourlySync: Boolean,
+        dailyBackup: Boolean,
+        accessCode: String
+    ) {
+        val updated = cloudRepo.update {
+            it.copy(
+                providerEnabled = enabled,
+                providerEmail = providerEmail.trim(),
+                hourlySyncEnabled = hourlySync,
+                dailyBackupEnabled = dailyBackup
+            )
+        }
+        if (accessCode.isNotBlank()) {
+            cloudRepo.setProviderCode(accessCode)
+        }
+        _cloudSettings.value = cloudRepo.load()
+        if (enabled && hourlySync) {
+            CloudSyncScheduler.schedule(application)
+        } else {
+            CloudSyncScheduler.cancel(application)
+        }
+        showMessage(if (enabled) "Cloud backup activated for this device" else "Cloud backup deactivated")
+        audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
+    }
+
+    /** Unlocks the provider screen with the company access code + Gmail. */
+    fun unlockProvider(email: String, code: String): Boolean {
+        val ok = cloudRepo.verifyProviderCode(code, email)
+        if (ok) isProviderUnlocked = true
+        return ok
+    }
+
+    /** Google accounts on this phone, so the owner does not need to type an address. */
+    fun googleAccounts(): List<String> = cloudRepo.googleAccounts()
 }

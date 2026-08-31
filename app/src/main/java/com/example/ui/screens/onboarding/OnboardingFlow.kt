@@ -240,7 +240,8 @@ private fun WelcomeStep(onStart: () -> Unit) {
             ) {
                 WelcomePoint(Icons.Default.Bolt, "Fast billing", "A normal sale takes a few taps")
                 WelcomePoint(Icons.Default.Print, "Prints receipts", "Bluetooth or Wi-Fi thermal printers")
-                WelcomePoint(Icons.Default.CloudOff, "No internet needed", "Everything is saved on this phone")
+                WelcomePoint(Icons.Default.CloudOff, "Works without internet", "Selling is saved on this phone first")
+                WelcomePoint(Icons.Default.CloudUpload, "Optional cloud backup", "Connect a Google account later for a safe copy")
                 WelcomePoint(Icons.Default.TrendingUp, "Grows with you", "Turn on stock, credit and staff when ready")
             }
 

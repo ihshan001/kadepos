@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -60,7 +62,7 @@ enum class SettingsSection(val title: String, val icon: @Composable () -> Unit) 
     DATA("Data & System", { Icon(Icons.Default.Storage, null, Modifier.size(16.dp)) })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsConfigurationScreen(
     viewModel: PosViewModel,
@@ -132,6 +134,7 @@ fun SettingsConfigurationScreen(
     var showResetConfirmDialog by remember { mutableStateOf(false) }
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
     var showFlushConfirmDialog by remember { mutableStateOf(false) }
+    var showProviderCloudDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -759,7 +762,14 @@ fun SettingsConfigurationScreen(
                         Card(
                             colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    // Provider only: long-press the offline status
+                                    // block to open the hidden provider controls.
+                                    onClick = {},
+                                    onLongClick = { showProviderCloudDialog = true }
+                                )
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -780,7 +790,10 @@ fun SettingsConfigurationScreen(
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
-                                onClick = { showBackupSuccessDialog = true },
+                                onClick = {
+                                    viewModel.backupNow()
+                                    showBackupSuccessDialog = true
+                                },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).testTag("backup_data_btn")
                             ) {
@@ -1092,6 +1105,14 @@ fun SettingsConfigurationScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // --- Provider-only cloud controls (hidden in normal navigation) ---
+    if (showProviderCloudDialog) {
+        ProviderCloudScreen(
+            viewModel = viewModel,
+            onDismiss = { showProviderCloudDialog = false }
         )
     }
 }
