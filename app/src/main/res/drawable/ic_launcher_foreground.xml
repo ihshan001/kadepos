@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.8"
+        android:scaleY="0.8">
+        <!-- Terminal Body -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M34,26 C34,22 38,20 42,20 L66,20 C70,20 74,22 74,26 L74,82 C74,86 70,88 66,88 L42,88 C38,88 34,86 34,82 Z" />
+        
+        <!-- Screen Area -->
+        <path
+            android:fillColor="#0F766E"
+            android:pathData="M39,30 C39,28 41,27 43,27 L65,27 C67,27 69,28 69,30 L69,52 C69,54 67,55 65,55 L43,55 C41,55 39,54 39,52 Z" />
+            
+        <!-- Thermal Receipt emerging from top -->
+        <path
+            android:fillColor="#F8FAFC"
+            android:pathData="M43,12 L65,12 L65,23 L43,23 Z" />
+        <path
+            android:strokeColor="#94A3B8"
+            android:strokeWidth="1.2"
+            android:pathData="M47,16 L61,16 M47,19 L57,19" />
+            
+        <!-- Screen Content (Checkmark / Currency Accent) -->
+        <path
+            android:strokeColor="#2DD4BF"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M47,41 L52,46 L61,35" />
+            
+        <!-- Keypad Dots -->
+        <path
+            android:fillColor="#475569"
+            android:pathData="M42,62 A2,2 0 1,1 42,62.01 M54,62 A2,2 0 1,1 54,62.01 M66,62 A2,2 0 1,1 66,62.01 M42,70 A2,2 0 1,1 42,70.01 M54,70 A2,2 0 1,1 54,70.01 M66,70 A2,2 0 1,1 66,70.01 M42,78 A2,2 0 1,1 42,78.01 M54,78 A2,2 0 1,1 54,78.01 M66,78 A2,2 0 1,1 66,78.01" />
+
+        <!-- Card Slot Accent Line -->
+        <path
+            android:strokeColor="#10B981"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:pathData="M46,84 L62,84" />
+    </group>
+</vector>

@@ -1,0 +1,6 @@
+{
+  "name": "The System",
+  "description": "Offline-first universal POS and billing system for Sri Lankan businesses. Sell, print receipts, track inventory, manage credit book, suppliers, expenses, and cash shifts seamlessly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
