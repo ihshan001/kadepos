@@ -88,6 +88,11 @@ private val SCREEN_PADDING = 14.dp
 private const val ALL_CATEGORY = "All"
 private const val FAVOURITES_CATEGORY = "Favourites"
 
+/** Parent rows only. Child variant lines are stocked separately but are chosen
+ * through the parent's picker, so they should never appear as their own card. */
+private fun catalogParentRows(products: List<ProductEntity>): List<ProductEntity> =
+    products.filter { !it.isVariant }
+
 /** Child lines created from a parent's [ProductEntity.variants] by [saveProduct]. */
 private fun variantChildrenOf(products: List<ProductEntity>, parent: ProductEntity): List<ProductEntity> =
     products.filter { it.parentProductId == parent.id && it.isVariant }
@@ -95,6 +100,12 @@ private fun variantChildrenOf(products: List<ProductEntity>, parent: ProductEnti
 /** A product only opens the variant chooser when it actually has options. */
 private fun hasVariantOptions(products: List<ProductEntity>, product: ProductEntity): Boolean =
     product.variants.isNotBlank() || variantChildrenOf(products, product).isNotEmpty()
+
+/** When a search matches a variant line, show its parent card instead. */
+private fun parentOfVariant(products: List<ProductEntity>, child: ProductEntity): ProductEntity? =
+    child.takeIf { it.isVariant }?.let { c ->
+        products.firstOrNull { !it.isVariant && it.id == c.parentProductId }
+    }
 
 /** Parses parent "Name|price" definitions into quick-pick options. */
 private fun parseVariantOptions(product: ProductEntity): List<Pair<String, Double>> =
@@ -193,19 +204,28 @@ fun SellScreen(
     }
 
     val filteredProducts = remember(products, searchQuery, selectedCategory) {
+        val base = catalogParentRows(products)
+        fun matches(p: ProductEntity): Boolean =
+            p.name.contains(searchQuery, ignoreCase = true) ||
+                p.barcode.contains(searchQuery, ignoreCase = true) ||
+                p.sku.contains(searchQuery, ignoreCase = true) ||
+                p.category.contains(searchQuery, ignoreCase = true) ||
+                p.subCategory.contains(searchQuery, ignoreCase = true)
+
         if (searchQuery.isNotBlank()) {
-            products.filter {
-                it.name.contains(searchQuery, ignoreCase = true) ||
-                        it.barcode.contains(searchQuery, ignoreCase = true) ||
-                        it.sku.contains(searchQuery, ignoreCase = true) ||
-                        it.category.contains(searchQuery, ignoreCase = true) ||
-                        it.subCategory.contains(searchQuery, ignoreCase = true)
-            }
+            // A typed option like "Basmati" should surface the Rice parent so
+            // the shopkeeper can pick the size/portion through the normal dialog.
+            val parentsOfMatchedVariants = products
+                .filter { it.isVariant && matches(it) }
+                .mapNotNull { parentOfVariant(products, it) }
+            (base.filter { matches(it) } + parentsOfMatchedVariants)
+                .distinctBy { it.id }
+                .sortedBy { it.name }
         } else {
             when (selectedCategory) {
-                ALL_CATEGORY -> products
-                FAVOURITES_CATEGORY -> products.filter { it.isFavourite }
-                else -> products.filter { p ->
+                ALL_CATEGORY -> base
+                FAVOURITES_CATEGORY -> base.filter { it.isFavourite }
+                else -> base.filter { p ->
                     val path = listOf(p.category, p.subCategory)
                         .filter { it.isNotBlank() }
                         .joinToString(" > ")
@@ -233,8 +253,12 @@ fun SellScreen(
                 p.name.lowercase().split(" ").any { it.length >= 3 && (it.contains(q) || q.contains(it)) } -> 50
                 else -> 0
             }
-            products
-                .filter { score(it) > 0 }
+            val base = catalogParentRows(products)
+            val matchedParents = products
+                .filter { it.isVariant && score(it) > 0 }
+                .mapNotNull { parentOfVariant(products, it) }
+            (base.filter { score(it) > 0 } + matchedParents)
+                .distinctBy { it.id }
                 .sortedWith(compareByDescending<ProductEntity> { score(it) }.thenBy { it.name })
                 .take(4)
         }
