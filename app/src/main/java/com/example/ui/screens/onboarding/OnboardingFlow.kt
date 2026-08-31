@@ -881,7 +881,7 @@ private fun StepScaffold(
                             modifier = Modifier.padding(bottom = 8.dp)
                         ) {
                             Icon(
-                                Icons.Default.InfoOutline,
+                                Icons.Default.Info,
                                 contentDescription = null,
                                 tint = TextSecondary,
                                 modifier = Modifier.size(15.dp)
