@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -299,28 +300,44 @@ fun SalesHistoryScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Real vector icons, not emoji: emoji are a different size and
+                // colour on every phone and cannot be tinted with the selection.
                 val filters = listOf(
-                    "ALL" to "All Methods",
-                    "CASH" to "💵 Cash Only",
-                    "CARD" to "💳 Card Only",
-                    "CREDIT" to "📒 Credit Only",
-                    "REFUNDED" to "↩️ Refunded"
+                    Triple("ALL", "All bills", null),
+                    Triple("CASH", "Cash", Icons.Default.Payments),
+                    Triple("CARD", "Card", Icons.Default.CreditCard),
+                    Triple("CREDIT", "Credit", Icons.Default.Book),
+                    Triple("REFUNDED", "Refunded", Icons.AutoMirrored.Filled.Undo)
                 )
-                items(filters) { (key, label) ->
+                items(filters) { (key, label, icon) ->
                     val isSelected = selectedPaymentFilter == key
+                    val tint = if (isSelected) Color.White else TextSecondary
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = if (isSelected) BrandTealDark else LightSurfaceVariant,
                         border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
                         modifier = Modifier.clickable { selectedPaymentFilter = key }
                     ) {
-                        Text(
-                            text = label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.White else TextSecondary,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
+                        ) {
+                            if (icon != null) {
+                                Icon(
+                                    icon,
+                                    contentDescription = null,
+                                    tint = tint,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = tint
+                            )
+                        }
                     }
                 }
             }

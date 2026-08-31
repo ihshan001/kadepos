@@ -227,17 +227,19 @@ fun ProductsScreen(
                 }
                 item {
                     ProductFilterChip(
-                        label = "⭐ Favourites",
+                        label = "Favourites",
                         isSelected = selectedFilter == "FAVOURITES",
-                        onClick = { selectedFilter = "FAVOURITES" }
+                        onClick = { selectedFilter = "FAVOURITES" },
+                        icon = Icons.Default.Star
                     )
                 }
                 item {
                     ProductFilterChip(
-                        label = "⚠️ Low Stock ($lowStockCount)",
+                        label = "Running low ($lowStockCount)",
                         isSelected = selectedFilter == "LOW_STOCK",
                         onClick = { selectedFilter = "LOW_STOCK" },
-                        highlightAmber = true
+                        highlightAmber = true,
+                        icon = Icons.Default.WarningAmber
                     )
                 }
                 items(categories) { cat ->
@@ -332,8 +334,15 @@ fun ProductFilterChip(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    highlightAmber: Boolean = false
+    highlightAmber: Boolean = false,
+    /** A real vector icon. Emoji render differently on every phone and do not tint. */
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
+    val contentColor = when {
+        isSelected -> Color.White
+        highlightAmber -> StatusAmber
+        else -> TextPrimary
+    }
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = when {
@@ -344,17 +353,26 @@ fun ProductFilterChip(
         border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
         modifier = Modifier.clickable(onClick = onClick)
     ) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            color = when {
-                isSelected -> Color.White
-                highlightAmber -> StatusAmber
-                else -> TextPrimary
-            },
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-        )
+        ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = contentColor
+            )
+        }
     }
 }
 

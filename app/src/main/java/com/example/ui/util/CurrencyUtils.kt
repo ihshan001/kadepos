@@ -151,6 +151,8 @@ object CurrencyUtils {
     private fun money(amount: Double): String = formatter.format(amount)
 
     /** 3.0 -> "3", 1.5 -> "1.5". Whole quantities should not read "3.00". */
+    fun trimQuantity(value: Double): String = trimNumber(value)
+
     private fun trimNumber(value: Double): String =
         if (value % 1.0 == 0.0) value.toLong().toString()
         else DecimalFormat("0.##").format(value)

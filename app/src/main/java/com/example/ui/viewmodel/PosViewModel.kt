@@ -19,6 +19,9 @@ import com.example.data.model.SaleItemEntity
 import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
 import com.example.data.model.AuditLogEntity
+import com.example.data.model.NotificationEntity
+import com.example.data.model.NotificationSettingsEntity
+import com.example.data.model.NotificationType
 import com.example.data.model.Permission
 import com.example.data.model.PermissionOverrides
 import com.example.data.model.PermissionSet
@@ -82,6 +85,8 @@ enum class MoreDestination {
     STAFF,
     REGISTER,
     NOTIFICATIONS,
+    /** The alert history plus the switches controlling what gets announced. */
+    ALERTS,
     PRINTER,
     ACTIVITY_LOG,
     SETTINGS
@@ -302,6 +307,85 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = false
         )
 
+    // --- Notifications ------------------------------------------------------
+
+    /** Only the alerts this person is entitled to see. */
+    val notifications: StateFlow<List<NotificationEntity>> =
+        combine(repository.notifications, permissions) { list, who ->
+            if (who.isSoloOwner) {
+                list
+            } else {
+                list.filter { entry ->
+                    val type = NotificationType.fromKey(entry.type)
+                    type?.requires == null || who.can(type.requires)
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val unreadNotificationCount: StateFlow<Int> =
+        notifications.map { list -> list.count { !it.isRead } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val notificationSettings: StateFlow<NotificationSettingsEntity> =
+        repository.notificationSettings
+            .map { it ?: NotificationSettingsEntity() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NotificationSettingsEntity())
+
+    fun markNotificationRead(id: Long) {
+        viewModelScope.launch { repository.markNotificationRead(id) }
+    }
+
+    fun markAllNotificationsRead() {
+        viewModelScope.launch { repository.markAllNotificationsRead() }
+    }
+
+    fun clearNotifications() {
+        viewModelScope.launch { repository.clearNotifications() }
+    }
+
+    /** Turn one kind of alert on or off. */
+    fun setNotificationType(type: NotificationType, on: Boolean) {
+        viewModelScope.launch {
+            val current = repository.notificationSettingsOrDefault()
+            repository.saveNotificationSettings(current.withType(type, on))
+        }
+    }
+
+    /** The master switch: off means the app never interrupts anyone. */
+    fun setNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val current = repository.notificationSettingsOrDefault()
+            repository.saveNotificationSettings(current.copy(enabled = enabled))
+        }
+    }
+
+    fun setNotificationThresholds(largeSale: Double?, largeDiscount: Double?) {
+        viewModelScope.launch {
+            val current = repository.notificationSettingsOrDefault()
+            repository.saveNotificationSettings(
+                current.copy(
+                    largeSaleThreshold = largeSale?.coerceAtLeast(0.0)
+                        ?: current.largeSaleThreshold,
+                    largeDiscountThreshold = largeDiscount?.coerceAtLeast(0.0)
+                        ?: current.largeDiscountThreshold
+                )
+            )
+        }
+    }
+
+    fun setQuietHours(enabled: Boolean, fromHour: Int? = null, toHour: Int? = null) {
+        viewModelScope.launch {
+            val current = repository.notificationSettingsOrDefault()
+            repository.saveNotificationSettings(
+                current.copy(
+                    quietHoursEnabled = enabled,
+                    quietFromHour = fromHour?.coerceIn(0, 23) ?: current.quietFromHour,
+                    quietToHour = toHour?.coerceIn(0, 23) ?: current.quietToHour
+                )
+            )
+        }
+    }
+
     fun can(permission: Permission): Boolean = permissions.value.can(permission)
 
     /**
@@ -324,6 +408,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 action = "BLOCKED",
                 description = "Tried to ${permission.label.lowercase()} without permission"
             )
+            // Only worth telling the owner about genuinely sensitive attempts.
+            if (permission.sensitive && !who.isSoloOwner) {
+                repository.notify(
+                    type = NotificationType.PERMISSION_BLOCKED,
+                    title = "Blocked: ${permission.label}",
+                    body = "${who.staffName.ifBlank { "Someone" }} tried to " +
+                        "${permission.label.lowercase()} but is not allowed to.",
+                    actorName = who.staffName
+                )
+            }
         }
         return false
     }
@@ -358,6 +452,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     staffName = match.name,
                     action = "LOGIN",
                     description = "${match.name} signed in as ${match.role}"
+                )
+                repository.notify(
+                    type = NotificationType.STAFF_SIGN_IN,
+                    title = "${match.name} signed in",
+                    body = "Signed in as ${match.role} at the counter",
+                    actorName = match.name
                 )
             }
             showMessage("Welcome back, ${match.name}")
@@ -599,10 +699,126 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             )
             clearCart()
 
+            // Tell the owner what just happened, if they asked to be told.
+            announceSale(storedSale, storedItems, cashier)
+
             // Print straight away when the owner asked for it during setup.
             val prof = repository.getProfileSync()
             if (prof?.autoPrint == true && printerService.isConnected) {
                 printBillReceipt(storedSale, storedItems)
+            }
+        }
+    }
+
+    /**
+     * Raises the notifications a completed sale can trigger. Deliberately kept
+     * out of the sale path itself: a failure to notify must never lose a sale,
+     * so everything here is best effort.
+     */
+    private suspend fun announceSale(
+        sale: SaleEntity,
+        items: List<SaleItemEntity>,
+        cashier: String
+    ) {
+        val settings = repository.notificationSettingsOrDefault()
+        val money = CurrencyUtils.formatLkr(sale.totalAmount)
+
+        // A big sale and every sale are separate switches. Only one fires, so
+        // turning both on does not double up.
+        if (sale.totalAmount >= settings.largeSaleThreshold) {
+            repository.notify(
+                type = NotificationType.LARGE_SALE,
+                title = "Big sale: $money",
+                body = "$cashier sold ${items.size} " +
+                    (if (items.size == 1) "item" else "items") + " on ${sale.invoiceNumber}",
+                amount = sale.totalAmount,
+                actorName = cashier,
+                reference = sale.invoiceNumber
+            )
+        } else {
+            repository.notify(
+                type = NotificationType.SALE_COMPLETED,
+                title = "Sale $money",
+                body = "$cashier completed ${sale.invoiceNumber}",
+                amount = sale.totalAmount,
+                actorName = cashier,
+                reference = sale.invoiceNumber
+            )
+        }
+
+        // Sold below or above the listed price.
+        items.filter { it.productId != null }.forEach { line ->
+            val product = repository.getProductById(line.productId ?: return@forEach)
+            if (product != null && kotlin.math.abs(line.unitPrice - product.sellingPrice) > 0.01) {
+                val cheaper = line.unitPrice < product.sellingPrice
+                repository.notify(
+                    type = NotificationType.PRICE_CHANGED,
+                    title = if (cheaper) "Sold below the listed price" else "Sold above the listed price",
+                    body = "$cashier sold ${line.productName} at " +
+                        "${CurrencyUtils.formatLkr(line.unitPrice)} instead of " +
+                        CurrencyUtils.formatLkr(product.sellingPrice),
+                    amount = line.unitPrice - product.sellingPrice,
+                    actorName = cashier,
+                    reference = sale.invoiceNumber
+                )
+            }
+        }
+
+        if (sale.discountAmount >= settings.largeDiscountThreshold) {
+            repository.notify(
+                type = NotificationType.DISCOUNT_GIVEN,
+                title = "Discount of ${CurrencyUtils.formatLkr(sale.discountAmount)}",
+                body = "$cashier discounted ${sale.invoiceNumber}",
+                amount = sale.discountAmount,
+                actorName = cashier,
+                reference = sale.invoiceNumber
+            )
+        }
+
+        if (sale.paymentMethod == "CREDIT" && sale.customerId != null) {
+            val customer = repository.getCustomerById(sale.customerId)
+            repository.notify(
+                type = NotificationType.CREDIT_GIVEN,
+                title = "${sale.customerName} took goods on credit",
+                body = "$money added to their account on ${sale.invoiceNumber}",
+                amount = sale.totalAmount,
+                actorName = cashier,
+                reference = sale.invoiceNumber
+            )
+            // Over their agreed limit is a separate, louder warning.
+            if (customer != null && customer.creditLimit > 0 &&
+                customer.creditBalance > customer.creditLimit
+            ) {
+                repository.notify(
+                    type = NotificationType.CREDIT_LIMIT,
+                    title = "${customer.name} is over their credit limit",
+                    body = "They owe ${CurrencyUtils.formatLkr(customer.creditBalance)} " +
+                        "against a limit of ${CurrencyUtils.formatLkr(customer.creditLimit)}",
+                    amount = customer.creditBalance,
+                    actorName = cashier,
+                    reference = sale.invoiceNumber
+                )
+            }
+        }
+
+        // Stock warnings, once per affected product.
+        items.mapNotNull { it.productId }.distinct().forEach { productId ->
+            val product = repository.getProductById(productId) ?: return@forEach
+            if (!product.isTracked) return@forEach
+            when {
+                product.currentStock <= 0.0 -> repository.notify(
+                    type = NotificationType.OUT_OF_STOCK,
+                    title = "${product.name} is finished",
+                    body = "Nothing left on the shelf. Customers cannot buy it.",
+                    reference = product.name
+                )
+                product.currentStock <= product.lowStockThreshold -> repository.notify(
+                    type = NotificationType.LOW_STOCK,
+                    title = "${product.name} is running low",
+                    body = "Only ${CurrencyUtils.trimQuantity(product.currentStock)} " +
+                        "${product.unit} left. Time to order more.",
+                    reference = product.name
+                )
             }
         }
     }
@@ -1028,8 +1244,39 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun closeShift(shiftId: Long, actualCash: Double, reason: String) {
         if (!allow(Permission.MANAGE_CASH)) return
         viewModelScope.launch {
+            // Read the expected figure before closing, so the summary can
+            // report the difference the owner actually cares about.
+            val shift = repository.getCurrentShiftSync()
+            val expected = shift?.expectedCash ?: 0.0
             repository.closeShift(shiftId, actualCash, reason)
-            showMessage("Shift closed")
+
+            val difference = actualCash - expected
+            val who = permissions.value.staffName.ifBlank { "Someone" }
+            repository.notify(
+                type = NotificationType.DAY_CLOSED,
+                title = "Day closed with ${CurrencyUtils.formatLkr(actualCash)} in the drawer",
+                body = "$who counted the cash. Expected ${CurrencyUtils.formatLkr(expected)}.",
+                amount = actualCash,
+                actorName = who
+            )
+            // A mismatch of more than a rupee is worth a separate, louder alert.
+            if (kotlin.math.abs(difference) >= 1.0) {
+                val short = difference < 0
+                repository.notify(
+                    type = NotificationType.CASH_SHORTAGE,
+                    title = if (short) {
+                        "Cash short by ${CurrencyUtils.formatLkr(-difference)}"
+                    } else {
+                        "Cash over by ${CurrencyUtils.formatLkr(difference)}"
+                    },
+                    body = "Counted ${CurrencyUtils.formatLkr(actualCash)} against " +
+                        "${CurrencyUtils.formatLkr(expected)} expected. " +
+                        reason.ifBlank { "No reason given." },
+                    amount = difference,
+                    actorName = who
+                )
+            }
+            showMessage("Day closed")
         }
     }
 
@@ -1055,6 +1302,15 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 action = "REFUND",
                 description = "Refunded ${refundItems.size} item(s): ${reason.ifBlank { "no reason given" }}",
                 amount = refundAmount
+            )
+            repository.notify(
+                type = NotificationType.REFUND_ISSUED,
+                title = "Refund of ${CurrencyUtils.formatLkr(refundAmount)}",
+                body = "${permissions.value.staffName.ifBlank { "Someone" }} refunded a bill. Reason: " +
+                    reason.ifBlank { "not given" },
+                amount = refundAmount,
+                actorName = permissions.value.staffName,
+                reference = saleId.toString()
             )
             showMessage("Money returned: ${CurrencyUtils.formatLkr(refundAmount)}. Stock put back.")
         }

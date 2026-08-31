@@ -318,7 +318,7 @@ fun SellScreen(
                     )
                 }
 
-                // 2. Quick Action Shortcuts Row: [ ⚡ Quick Sale ] [ ➕ Quick Item ] [ 👤 Customer ] [ ⏸️ Parked ]
+                // 2. Quick action shortcuts: Quick Sale, Quick Item, Customer, Parked bills.
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -920,13 +920,24 @@ fun ProductQuickCard(
                         shape = RoundedCornerShape(6.dp),
                         color = StatusGreenBg
                     ) {
-                        Text(
-                            text = "✓ ${cartQty.toInt()} in cart",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = StatusGreen,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                        )
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = StatusGreen,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "${cartQty.toInt()} in cart",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusGreen
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -2045,7 +2056,7 @@ fun CheckoutSheet(
                                 Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = StatusAmber)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (customer != null) "Customer: ${customer.name}" else "⚠ Customer Required for Credit",
+                                    text = if (customer != null) "Customer: ${customer.name}" else "Choose a customer for credit",
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
                                 )
@@ -2109,7 +2120,7 @@ fun CheckoutSheet(
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("COMPLETE SALE ✓", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("COMPLETE SALE", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
     }
@@ -2197,7 +2208,7 @@ fun SaleCompleteDialog(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text("SALE COMPLETE ✓", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = TextPrimary)
+                    Text("SALE COMPLETE", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = TextPrimary)
                     Text(
                         CurrencyUtils.formatLkr(sale.totalAmount),
                         fontWeight = FontWeight.Black,
@@ -2295,7 +2306,7 @@ fun SaleCompleteDialog(
                         ) {
                             Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (printDone) "Printed ✓" else "Print Receipt")
+                            Text(if (printDone) "Printed" else "Print Receipt")
                         }
 
                         OutlinedButton(

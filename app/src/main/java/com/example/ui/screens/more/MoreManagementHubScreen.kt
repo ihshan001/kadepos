@@ -74,6 +74,7 @@ fun MoreManagementHubScreen(
                 profile = viewModel.profile.collectAsState().value,
                 onBack = onBackToHub
             )
+            MoreDestination.ALERTS -> NotificationsScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.ACTIVITY_LOG -> ActivityLogScreen(viewModel = viewModel, onBack = onBackToHub)
         }
     }
@@ -93,6 +94,7 @@ fun HubMenuScreen(
     val customers by viewModel.customers.collectAsState()
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val printerConnected by viewModel.isPrinterConnected.collectAsState()
+    val unreadAlerts by viewModel.unreadNotificationCount.collectAsState()
 
     val tracksStock = profile?.trackStock == true
     val creditEnabled = profile?.creditEnabled == true
@@ -111,8 +113,26 @@ fun HubMenuScreen(
             TopAppBar(
                 title = { Text("More", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Action Center", tint = BrandTealPrimary)
+                    IconButton(onClick = { onSelectDestination(MoreDestination.ALERTS) }) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadAlerts > 0) {
+                                    Badge(containerColor = StatusRed) {
+                                        Text(
+                                            if (unreadAlerts > 9) "9+" else "$unreadAlerts",
+                                            color = Color.White,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = "Alerts",
+                                tint = BrandTealPrimary
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
@@ -127,6 +147,21 @@ fun HubMenuScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Who is signed in and what they are. Without this a shared counter
+            // phone gives no clue whose name is going on the next bill.
+            item {
+                WhoIsUsingCard(
+                    shopName = profile?.name.orEmpty().ifBlank { "Your shop" },
+                    personName = permissions.staffName,
+                    roleName = if (permissions.isSoloOwner) {
+                        "Owner"
+                    } else {
+                        permissions.role.friendlyName
+                    },
+                    isSolo = permissions.isSoloOwner
+                )
+            }
+
             item {
                 HubActionCard(
                     title = "Things needing attention",
@@ -134,6 +169,20 @@ fun HubMenuScreen(
                     icon = Icons.Default.NotificationsActive,
                     badge = if (alertCount > 0) "$alertCount" else null,
                     onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }
+                )
+            }
+
+            item {
+                HubActionCard(
+                    title = "Alerts",
+                    subtitle = if (unreadAlerts > 0) {
+                        "$unreadAlerts new since you last looked"
+                    } else {
+                        "Sales, refunds and warnings as they happen"
+                    },
+                    icon = Icons.Default.Notifications,
+                    badge = if (unreadAlerts > 0) "$unreadAlerts" else null,
+                    onClick = { onSelectDestination(MoreDestination.ALERTS) }
                 )
             }
 
@@ -243,14 +292,47 @@ fun HubMenuScreen(
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    TextButton(onClick = { viewModel.signOut() }) {
-                        Text("Sign out", color = StatusRed, fontWeight = FontWeight.Bold)
+            // Staff cannot open the Team screen, so this is the only way for
+            // them to find out why something is greyed out. Answering that
+            // question in the app saves a phone call to the owner.
+            if (!permissions.isSoloOwner && !permissions.can(Permission.MANAGE_STAFF)) {
+                item {
+                    var showMine by remember { mutableStateOf(false) }
+                    HubActionCard(
+                        title = "What I can do",
+                        subtitle = "${permissions.granted.size} things you are allowed to use",
+                        icon = Icons.Default.VerifiedUser,
+                        onClick = { showMine = true }
+                    )
+                    if (showMine) {
+                        MyAccessDialog(
+                            roleName = permissions.role.friendlyName,
+                            roleSummary = permissions.role.summary,
+                            allowed = permissions.granted.toList().sortedBy { it.label },
+                            blocked = (Permission.entries.toSet() - permissions.granted)
+                                .toList().sortedBy { it.label },
+                            onDismiss = { showMine = false }
+                        )
+                    }
+                }
+            }
+
+            // A one-person shop has nobody to sign back in as, so offering
+            // "Sign out" would just lock them out of their own till.
+            if (!permissions.isSoloOwner) {
+                item {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(onClick = { viewModel.signOut() }) {
+                            Text(
+                                "Sign out of ${permissions.staffName.ifBlank { "this shop" }}",
+                                color = StatusRed,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -270,6 +352,145 @@ private fun SectionHeading(text: String) {
             fontWeight = FontWeight.Bold,
             color = TextSecondary
         )
+    }
+}
+
+/** A read-only view of your own access, for staff who cannot open Team. */
+@Composable
+private fun MyAccessDialog(
+    roleName: String,
+    roleSummary: String,
+    allowed: List<Permission>,
+    blocked: List<Permission>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxHeight(0.8f)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text("You are a $roleName", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = TextPrimary)
+                Text(roleSummary, fontSize = 12.sp, color = TextSecondary)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    item {
+                        Text(
+                            "YOU CAN",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StatusGreen
+                        )
+                    }
+                    items(allowed, key = { "y" + it.name }) { perm ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = StatusGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(perm.label, fontSize = 13.sp, color = TextPrimary)
+                        }
+                    }
+                    if (blocked.isNotEmpty()) {
+                        item {
+                            Text(
+                                "ASK THE OWNER FOR",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextMuted,
+                                modifier = Modifier.padding(top = 14.dp)
+                            )
+                        }
+                        items(blocked, key = { "n" + it.name }) { perm ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(perm.label, fontSize = 13.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Close") }
+            }
+        }
+    }
+}
+
+/**
+ * Shows whose hands the till is in. On a shared counter phone this is the
+ * difference between "my name goes on this bill" and having no idea.
+ */
+@Composable
+private fun WhoIsUsingCard(
+    shopName: String,
+    personName: String,
+    roleName: String,
+    isSolo: Boolean
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandTealPrimary),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    personName.take(1).uppercase().ifBlank { "S" },
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    shopName,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp
+                )
+                Text(
+                    if (isSolo) {
+                        "Just you — nothing is locked"
+                    } else {
+                        "$personName · $roleName"
+                    },
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
 }
 

@@ -870,7 +870,7 @@ fun SettingsConfigurationScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Looks Perfect ✓", fontWeight = FontWeight.Bold)
+                        Text("Looks good", fontWeight = FontWeight.Bold)
                     }
                 }
             }

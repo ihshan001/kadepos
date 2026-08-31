@@ -12,6 +12,8 @@ import com.example.data.model.CreditTransactionEntity
 import com.example.data.model.CustomerEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.HeldSaleEntity
+import com.example.data.model.NotificationEntity
+import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.ProductEntity
 import com.example.data.model.PurchaseEntity
 import com.example.data.model.PurchaseItemEntity
@@ -44,9 +46,11 @@ import com.example.data.model.SupplierEntity
         CashRegisterShiftEntity::class,
         CashMovementEntity::class,
         HeldSaleEntity::class,
-        AuditLogEntity::class
+        AuditLogEntity::class,
+        NotificationEntity::class,
+        NotificationSettingsEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class PosDatabase : RoomDatabase() {

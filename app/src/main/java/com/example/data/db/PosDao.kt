@@ -7,6 +7,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.model.AuditLogEntity
+import com.example.data.model.NotificationEntity
+import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
@@ -335,4 +337,40 @@ interface PosDao {
 
         return saleId
     }
+
+    // ---- Notifications ---------------------------------------------------
+
+    @Query("SELECT * FROM notifications ORDER BY timestamp DESC LIMIT :limit")
+    fun getNotifications(limit: Int = 200): Flow<List<NotificationEntity>>
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE isRead = 0")
+    fun getUnreadNotificationCount(): Flow<Int>
+
+    @Insert
+    suspend fun insertNotification(entry: NotificationEntity): Long
+
+    @Query("UPDATE notifications SET isRead = 1 WHERE id = :id")
+    suspend fun markNotificationRead(id: Long)
+
+    @Query("UPDATE notifications SET isRead = 1")
+    suspend fun markAllNotificationsRead()
+
+    @Query("DELETE FROM notifications")
+    suspend fun clearNotifications()
+
+    /**
+     * Keeps the table small on a phone that never gets cleaned up. Called after
+     * each insert so the newest 500 entries survive and older ones fall away.
+     */
+    @Query("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY timestamp DESC LIMIT :keep)")
+    suspend fun trimNotifications(keep: Int = 500)
+
+    @Query("SELECT * FROM notification_settings WHERE id = 1")
+    fun getNotificationSettings(): Flow<NotificationSettingsEntity?>
+
+    @Query("SELECT * FROM notification_settings WHERE id = 1")
+    suspend fun getNotificationSettingsSync(): NotificationSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveNotificationSettings(settings: NotificationSettingsEntity)
 }

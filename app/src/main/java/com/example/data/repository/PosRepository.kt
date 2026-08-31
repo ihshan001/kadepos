@@ -1,6 +1,10 @@
 package com.example.data.repository
 
 import com.example.data.db.PosDao
+import com.example.data.model.NotificationEntity
+import com.example.data.model.NotificationSettingsEntity
+import com.example.data.model.NotificationType
+import com.example.data.model.NotificationImportance
 import com.example.data.model.AuditLogEntity
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
@@ -82,6 +86,8 @@ class PosRepository(private val dao: PosDao) {
     suspend fun getProductByBarcode(barcode: String, shopType: String) =
         dao.getProductByBarcode(barcode, shopType)
     suspend fun getProductById(id: Long) = dao.getProductById(id)
+    suspend fun getCustomerById(id: Long) = dao.getCustomerById(id)
+    suspend fun getCurrentShiftSync() = dao.getCurrentShiftSync()
 
     suspend fun insertCustomer(customer: CustomerEntity) = dao.insertCustomer(customer)
     suspend fun updateCustomer(customer: CustomerEntity) = dao.updateCustomer(customer)
@@ -440,4 +446,56 @@ class PosRepository(private val dao: PosDao) {
 
     suspend fun holdSale(heldSale: HeldSaleEntity) = dao.insertHeldSale(heldSale)
     suspend fun deleteHeldSale(id: Long) = dao.deleteHeldSale(id)
+
+    // ---- Notifications -------------------------------------------------------
+
+    val notifications = dao.getNotifications()
+    val unreadNotificationCount = dao.getUnreadNotificationCount()
+    val notificationSettings = dao.getNotificationSettings()
+
+    suspend fun notificationSettingsOrDefault(): NotificationSettingsEntity =
+        dao.getNotificationSettingsSync() ?: NotificationSettingsEntity()
+
+    suspend fun saveNotificationSettings(settings: NotificationSettingsEntity) =
+        dao.saveNotificationSettings(settings)
+
+    suspend fun markNotificationRead(id: Long) = dao.markNotificationRead(id)
+    suspend fun markAllNotificationsRead() = dao.markAllNotificationsRead()
+    suspend fun clearNotifications() = dao.clearNotifications()
+
+    /**
+     * Records something worth knowing about, if the shop asked to be told.
+     * Returns true when it should also interrupt (buzz) rather than sit
+     * quietly in the list - quiet hours and QUIET importance stay silent.
+     */
+    suspend fun notify(
+        type: NotificationType,
+        title: String,
+        body: String,
+        amount: Double = 0.0,
+        actorName: String = "",
+        reference: String = "",
+        hourOfDay: Int = java.util.Calendar.getInstance()
+            .get(java.util.Calendar.HOUR_OF_DAY)
+    ): Boolean {
+        val settings = notificationSettingsOrDefault()
+        if (!settings.isOn(type)) return false
+
+        dao.insertNotification(
+            NotificationEntity(
+                type = type.key,
+                title = title,
+                body = body,
+                amount = amount,
+                actorName = actorName,
+                reference = reference,
+                importance = type.importance.name
+            )
+        )
+        // Keep the table from growing without limit on a phone that runs for years.
+        dao.trimNotifications()
+
+        return type.importance != NotificationImportance.QUIET &&
+            !settings.isQuietAt(hourOfDay)
+    }
 }

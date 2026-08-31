@@ -1,5 +1,7 @@
 package com.example
 
+import com.example.data.model.NotificationSettingsEntity
+import com.example.data.model.NotificationType
 import com.example.data.model.Permission
 import com.example.data.model.PermissionSet
 import com.example.data.model.PermissionOverrides
@@ -292,5 +294,90 @@ class SetupValidationTest {
     assertTrue(text.contains("1,600.00"))
     assertTrue(text.contains("Change"))
     assertTrue(text.contains("400.00"))
+  }
+
+  // --- Notifications -------------------------------------------------------
+
+  @Test
+  fun `defaults are on for the alerts that matter and off for noisy ones`() {
+    val settings = NotificationSettingsEntity()
+    assertTrue("refunds must be on by default", settings.isOn(NotificationType.REFUND_ISSUED))
+    assertTrue(settings.isOn(NotificationType.CASH_SHORTAGE))
+    assertTrue(settings.isOn(NotificationType.OUT_OF_STOCK))
+    // A busy shop should not buzz on every single sale unless asked.
+    assertFalse(settings.isOn(NotificationType.SALE_COMPLETED))
+    assertFalse(settings.isOn(NotificationType.STAFF_SIGN_IN))
+  }
+
+  @Test
+  fun `the master switch silences everything`() {
+    val off = NotificationSettingsEntity(enabled = false)
+    NotificationType.entries.forEach {
+      assertFalse("$it should be off when the master switch is off", off.isOn(it))
+    }
+  }
+
+  @Test
+  fun `turning one alert on and off again is stable`() {
+    val base = NotificationSettingsEntity()
+    val on = base.withType(NotificationType.SALE_COMPLETED, true)
+    assertTrue(on.isOn(NotificationType.SALE_COMPLETED))
+    // Other choices must survive the change.
+    assertTrue(on.isOn(NotificationType.REFUND_ISSUED))
+
+    val off = on.withType(NotificationType.SALE_COMPLETED, false)
+    assertFalse(off.isOn(NotificationType.SALE_COMPLETED))
+    assertTrue(off.isOn(NotificationType.REFUND_ISSUED))
+  }
+
+  @Test
+  fun `unknown alert names in an old row are ignored`() {
+    val settings = NotificationSettingsEntity(enabledKeys = "REMOVED_ALERT,REFUND_ISSUED")
+    assertTrue(settings.isOn(NotificationType.REFUND_ISSUED))
+    assertFalse(settings.isOn(NotificationType.LOW_STOCK))
+  }
+
+  @Test
+  fun `quiet hours across midnight are handled`() {
+    val night = NotificationSettingsEntity(
+      quietHoursEnabled = true, quietFromHour = 21, quietToHour = 7
+    )
+    assertTrue("10pm is inside 9pm-7am", night.isQuietAt(22))
+    assertTrue("2am is inside 9pm-7am", night.isQuietAt(2))
+    assertTrue(night.isQuietAt(21))
+    assertFalse("7am is when it ends", night.isQuietAt(7))
+    assertFalse("midday is not quiet", night.isQuietAt(12))
+  }
+
+  @Test
+  fun `a same-day quiet window is handled`() {
+    val siesta = NotificationSettingsEntity(
+      quietHoursEnabled = true, quietFromHour = 13, quietToHour = 15
+    )
+    assertTrue(siesta.isQuietAt(14))
+    assertFalse(siesta.isQuietAt(16))
+    assertFalse(siesta.isQuietAt(9))
+  }
+
+  @Test
+  fun `quiet hours off means never quiet`() {
+    val always = NotificationSettingsEntity(quietHoursEnabled = false)
+    (0..23).forEach { assertFalse(always.isQuietAt(it)) }
+  }
+
+  @Test
+  fun `a cashier is never shown owner-only alerts`() {
+    val cashier = PermissionSet.of(StaffRole.CASHIER)
+    val visible = NotificationType.visibleTo(cashier)
+    assertFalse(visible.contains(NotificationType.PRICE_CHANGED))
+    assertFalse(visible.contains(NotificationType.CASH_SHORTAGE))
+    assertFalse(visible.contains(NotificationType.PERMISSION_BLOCKED))
+    assertFalse(visible.contains(NotificationType.DAY_CLOSED))
+  }
+
+  @Test
+  fun `an owner sees every kind of alert`() {
+    val owner = PermissionSet.of(StaffRole.OWNER)
+    assertEquals(NotificationType.entries.size, NotificationType.visibleTo(owner).size)
   }
 }
