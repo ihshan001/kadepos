@@ -1,5 +1,8 @@
 package com.example.ui.screens.more
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,6 +32,12 @@ import com.example.data.model.StaffEntity
 import com.example.data.model.SupplierEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
+import com.example.data.model.StaffRole
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.example.data.model.Permission
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Print
 import com.example.ui.viewmodel.MoreDestination
 import com.example.ui.viewmodel.PosViewModel
 
@@ -51,7 +60,7 @@ fun MoreManagementHubScreen(
             MoreDestination.CUSTOMERS, MoreDestination.CREDIT_BOOK -> com.example.ui.screens.customers.CustomersCreditScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.SUPPLIERS -> com.example.ui.screens.suppliers.SuppliersPurchasesScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.PURCHASES -> com.example.ui.screens.suppliers.SuppliersPurchasesScreen(viewModel = viewModel, onBack = onBackToHub)
-            MoreDestination.EXPENSES -> ExpensesScreen(viewModel = viewModel, onBack = onBackToHub)
+            MoreDestination.EXPENSES -> com.example.ui.screens.expenses.ExpensesScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.STAFF -> StaffScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.REGISTER -> CashRegisterScreen(viewModel = viewModel, onBack = onBackToHub)
             MoreDestination.NOTIFICATIONS -> ActionCenterScreen(
@@ -60,6 +69,13 @@ fun MoreManagementHubScreen(
                 onNavigateToDestination = { dest -> onSelectDestination(dest) }
             )
             MoreDestination.SETTINGS -> SettingsConfigurationScreen(viewModel = viewModel, onBack = onBackToHub)
+            MoreDestination.PRINTER -> com.example.ui.screens.printer.PrinterSetupScreen(
+                viewModel = viewModel,
+                profile = viewModel.profile.collectAsState().value,
+                onBack = onBackToHub
+            )
+            MoreDestination.ALERTS -> NotificationsScreen(viewModel = viewModel, onBack = onBackToHub)
+            MoreDestination.ACTIVITY_LOG -> ActivityLogScreen(viewModel = viewModel, onBack = onBackToHub)
         }
     }
 }
@@ -74,14 +90,51 @@ fun HubMenuScreen(
     onSelectDestination: (MoreDestination) -> Unit
 ) {
     val profile by viewModel.profile.collectAsState()
+    val permissions by viewModel.permissions.collectAsState()
+    val customers by viewModel.customers.collectAsState()
+    val lowStock by viewModel.lowStockProducts.collectAsState()
+    val printerConnected by viewModel.isPrinterConnected.collectAsState()
+    val unreadAlerts by viewModel.unreadNotificationCount.collectAsState()
+
+    val tracksStock = profile?.trackStock == true
+    val creditEnabled = profile?.creditEnabled == true
+    // Not every shop counts a float in and out of a drawer.
+    val usesCashDrawer = profile?.cashDrawerEnabled == true
+    val customersOwing = customers.count { it.creditBalance > 0 }
+    val alertCount = lowStock.size + customersOwing
+    val printerSubtitle = when {
+        printerConnected -> "Connected to ${profile?.printerName.orEmpty().ifBlank { "your printer" }}"
+        profile?.printerName.orEmpty().isNotBlank() -> "Saved, but not connected right now"
+        else -> "Connect a Bluetooth or Wi-Fi printer"
+    }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
-                title = { Text("Management & Tools", fontWeight = FontWeight.Bold) },
+                title = { Text("More", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Action Center", tint = BrandTealPrimary)
+                    IconButton(onClick = { onSelectDestination(MoreDestination.ALERTS) }) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadAlerts > 0) {
+                                    Badge(containerColor = StatusRed) {
+                                        Text(
+                                            if (unreadAlerts > 9) "9+" else "$unreadAlerts",
+                                            color = Color.White,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = "Alerts",
+                                tint = BrandTealPrimary
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
@@ -96,87 +149,353 @@ fun HubMenuScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Who is signed in and what they are. Without this a shared counter
+            // phone gives no clue whose name is going on the next bill.
+            item {
+                WhoIsUsingCard(
+                    shopName = profile?.name.orEmpty().ifBlank { "Your shop" },
+                    personName = permissions.staffName,
+                    roleName = if (permissions.isSoloOwner) {
+                        "Owner"
+                    } else {
+                        permissions.role.friendlyName
+                    },
+                    isSolo = permissions.isSoloOwner
+                )
+            }
+
             item {
                 HubActionCard(
-                    title = "Action Center & Alerts",
-                    subtitle = "Low stock alerts, pending payables, overdue Khata balance",
+                    title = "Things needing attention",
+                    subtitle = "Low stock, money owed to you, bills to pay",
                     icon = Icons.Default.NotificationsActive,
-                    badge = "Action",
+                    badge = if (alertCount > 0) "$alertCount" else null,
                     onClick = { onSelectDestination(MoreDestination.NOTIFICATIONS) }
                 )
             }
 
             item {
-                Text("BUSINESS HUBS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-            }
-
-            item {
                 HubActionCard(
-                    title = "Business Reports & Profit",
-                    subtitle = "Turnover, gross profit, sales breakdown",
-                    icon = Icons.Default.BarChart,
-                    badge = "Insights",
-                    onClick = { onSelectDestination(MoreDestination.REPORTS) }
+                    title = "Alerts",
+                    subtitle = if (unreadAlerts > 0) {
+                        "$unreadAlerts new since you last looked"
+                    } else {
+                        "Sales, refunds and warnings as they happen"
+                    },
+                    icon = Icons.Default.Notifications,
+                    badge = if (unreadAlerts > 0) "$unreadAlerts" else null,
+                    onClick = { onSelectDestination(MoreDestination.ALERTS) }
                 )
             }
 
+            item { SectionHeading("Money") }
+
+            if (permissions.can(Permission.VIEW_REPORTS)) {
+                item {
+                    HubActionCard(
+                        title = "Reports",
+                        subtitle = "What you sold and what you earned",
+                        icon = Icons.Default.BarChart,
+                        onClick = { onSelectDestination(MoreDestination.REPORTS) }
+                    )
+                }
+            }
+
+            if (creditEnabled && permissions.can(Permission.MANAGE_CUSTOMERS)) {
+                item {
+                    HubActionCard(
+                        title = "Credit book",
+                        subtitle = if (customersOwing > 0) {
+                            "$customersOwing ${if (customersOwing == 1) "customer owes" else "customers owe"} you money"
+                        } else {
+                            "Nobody owes you right now"
+                        },
+                        icon = Icons.Default.Book,
+                        onClick = { onSelectDestination(MoreDestination.CREDIT_BOOK) }
+                    )
+                }
+            }
+
+            if (usesCashDrawer && permissions.can(Permission.MANAGE_CASH)) {
+                item {
+                    HubActionCard(
+                        title = "Cash drawer",
+                        subtitle = "Open the day, count cash, close the day",
+                        icon = Icons.Default.PointOfSale,
+                        onClick = { onSelectDestination(MoreDestination.REGISTER) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_EXPENSES)) {
+                item {
+                    HubActionCard(
+                        title = "Expenses",
+                        subtitle = "Rent, electricity, transport and other costs",
+                        icon = Icons.Default.Receipt,
+                        onClick = { onSelectDestination(MoreDestination.EXPENSES) }
+                    )
+                }
+            }
+
+            if (tracksStock && permissions.can(Permission.MANAGE_SUPPLIERS)) {
+                item { SectionHeading("Stock") }
+                item {
+                    HubActionCard(
+                        title = "Suppliers and purchases",
+                        subtitle = "Who you buy from and what you still owe them",
+                        icon = Icons.Default.LocalShipping,
+                        onClick = { onSelectDestination(MoreDestination.SUPPLIERS) }
+                    )
+                }
+            }
+
+            item { SectionHeading("Shop setup") }
+
             item {
                 HubActionCard(
-                    title = "Customer Credit Book",
-                    subtitle = "Customer receivables, pay later balances, WhatsApp reminders",
-                    icon = Icons.Default.Book,
-                    badge = "Khata",
-                    onClick = { onSelectDestination(MoreDestination.CREDIT_BOOK) }
+                    title = "Printer",
+                    subtitle = printerSubtitle,
+                    icon = Icons.Default.Print,
+                    onClick = { onSelectDestination(MoreDestination.PRINTER) }
                 )
             }
 
-            item {
-                HubActionCard(
-                    title = "Suppliers & Purchases",
-                    subtitle = "Manage vendors, restock invoices, payables",
-                    icon = Icons.Default.LocalShipping,
-                    onClick = { onSelectDestination(MoreDestination.SUPPLIERS) }
+            if (permissions.can(Permission.MANAGE_STAFF)) {
+                item {
+                    HubActionCard(
+                        title = "My team",
+                        subtitle = if (profile?.staffEnabled == true) {
+                            "Add staff and choose what each person can do"
+                        } else {
+                            // Solo shops keep the entry as the way to discover
+                            // the feature, but the wording must not imply a team.
+                            "Working alone. Tap to start adding staff."
+                        },
+                        icon = Icons.Default.Badge,
+                        onClick = { onSelectDestination(MoreDestination.STAFF) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.MANAGE_SETTINGS)) {
+                item {
+                    HubActionCard(
+                        title = "Shop details and receipt",
+                        subtitle = "Name, address, phone, what prints on the bill",
+                        icon = Icons.Default.Settings,
+                        onClick = { onSelectDestination(MoreDestination.SETTINGS) }
+                    )
+                }
+            }
+
+            if (permissions.can(Permission.VIEW_AUDIT)) {
+                item {
+                    HubActionCard(
+                        title = "Activity log",
+                        subtitle = "Every refund, price change and sign-in",
+                        icon = Icons.Default.History,
+                        onClick = { onSelectDestination(MoreDestination.ACTIVITY_LOG) }
+                    )
+                }
+            }
+
+            // Staff cannot open the Team screen, so this is the only way for
+            // them to find out why something is greyed out. Answering that
+            // question in the app saves a phone call to the owner.
+            if (!permissions.isSoloOwner && !permissions.can(Permission.MANAGE_STAFF)) {
+                item {
+                    var showMine by remember { mutableStateOf(false) }
+                    HubActionCard(
+                        title = "What I can do",
+                        subtitle = "${permissions.granted.size} things you are allowed to use",
+                        icon = Icons.Default.VerifiedUser,
+                        onClick = { showMine = true }
+                    )
+                    if (showMine) {
+                        MyAccessDialog(
+                            roleName = permissions.role.friendlyName,
+                            roleSummary = permissions.role.summary,
+                            allowed = permissions.granted.toList().sortedBy { it.label },
+                            blocked = (Permission.entries.toSet() - permissions.granted)
+                                .toList().sortedBy { it.label },
+                            onDismiss = { showMine = false }
+                        )
+                    }
+                }
+            }
+
+            // A one-person shop has nobody to sign back in as, so offering
+            // "Sign out" would just lock them out of their own till.
+            if (!permissions.isSoloOwner) {
+                item {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(onClick = { viewModel.signOut() }) {
+                            Text(
+                                "Sign out of ${permissions.staffName.ifBlank { "this shop" }}",
+                                color = StatusRed,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    Column {
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextSecondary
+        )
+    }
+}
+
+/** A read-only view of your own access, for staff who cannot open Team. */
+@Composable
+private fun MyAccessDialog(
+    roleName: String,
+    roleSummary: String,
+    allowed: List<Permission>,
+    blocked: List<Permission>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxHeight(0.8f)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text("You are a $roleName", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = TextPrimary)
+                Text(roleSummary, fontSize = 12.sp, color = TextSecondary)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    item {
+                        Text(
+                            "YOU CAN",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StatusGreen
+                        )
+                    }
+                    items(allowed, key = { "y" + it.name }) { perm ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = StatusGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(perm.label, fontSize = 13.sp, color = TextPrimary)
+                        }
+                    }
+                    if (blocked.isNotEmpty()) {
+                        item {
+                            Text(
+                                "ASK THE OWNER FOR",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextMuted,
+                                modifier = Modifier.padding(top = 14.dp)
+                            )
+                        }
+                        items(blocked, key = { "n" + it.name }) { perm ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(perm.label, fontSize = 13.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Close") }
+            }
+        }
+    }
+}
+
+/**
+ * Shows whose hands the till is in. On a shared counter phone this is the
+ * difference between "my name goes on this bill" and having no idea.
+ */
+@Composable
+private fun WhoIsUsingCard(
+    shopName: String,
+    personName: String,
+    roleName: String,
+    isSolo: Boolean
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandTealPrimary),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    personName.take(1).uppercase().ifBlank { "S" },
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp
                 )
             }
-
-            item {
-                HubActionCard(
-                    title = "Shop Expenses Tracker",
-                    subtitle = "Electricity, rent, transport, tea, packaging",
-                    icon = Icons.Default.Receipt,
-                    onClick = { onSelectDestination(MoreDestination.EXPENSES) }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    shopName,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp
                 )
-            }
-
-            item {
-                HubActionCard(
-                    title = "Cash Register & Shifts",
-                    subtitle = "Counter drawer cash in/out, shift handovers",
-                    icon = Icons.Default.PointOfSale,
-                    onClick = { onSelectDestination(MoreDestination.REGISTER) }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("TEAM & SETTINGS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-            }
-
-            item {
-                HubActionCard(
-                    title = "Staff & Cashiers",
-                    subtitle = "Current cashier: ${profile?.activeStaffName ?: "Staff"}",
-                    icon = Icons.Default.Badge,
-                    onClick = { onSelectDestination(MoreDestination.STAFF) }
-                )
-            }
-
-            item {
-                HubActionCard(
-                    title = "Store & Printer Settings",
-                    subtitle = "Business profile, thermal printer, receipt footer",
-                    icon = Icons.Default.Settings,
-                    onClick = { onSelectDestination(MoreDestination.SETTINGS) }
+                Text(
+                    if (isSolo) {
+                        "Just you — nothing is locked"
+                    } else {
+                        "$personName · $roleName"
+                    },
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp
                 )
             }
         }
@@ -242,6 +561,15 @@ fun ReportsScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.VIEW_REPORTS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.VIEW_REPORTS),
+            onBack = onBack
+        )
+        return
+    }
+
     val sales by viewModel.sales.collectAsState()
     val expenses by viewModel.expenses.collectAsState()
 
@@ -257,6 +585,8 @@ fun ReportsScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Reports & Analytics", fontWeight = FontWeight.Bold) },
@@ -357,6 +687,8 @@ fun SuppliersScreen(
     var supplierToPay by remember { mutableStateOf<SupplierEntity?>(null) }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Suppliers & Purchases", fontWeight = FontWeight.Bold) },
@@ -594,183 +926,6 @@ fun RecordSupplierPaymentDialog(
 }
 
 // -------------------------------------------------------------------------------------
-// Expenses Screen
-// -------------------------------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ExpensesScreen(
-    viewModel: PosViewModel,
-    onBack: () -> Unit
-) {
-    val expenses by viewModel.expenses.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Shop Expenses", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = BrandTealPrimary,
-                contentColor = Color.White,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Add Expense", fontWeight = FontWeight.Bold) }
-            )
-        },
-        containerColor = LightBackground
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("TOTAL EXPENSES PAID", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextSecondary)
-                        Text(
-                            CurrencyUtils.formatLkr(expenses.sumOf { it.amount }),
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 20.sp,
-                            color = StatusRed
-                        )
-                    }
-                }
-            }
-
-            items(expenses) { exp ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = LightSurface),
-                    border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(exp.category, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("${CurrencyUtils.formatDateTime(exp.timestamp)} • ${exp.paymentMethod}", fontSize = 12.sp, color = TextSecondary)
-                            if (exp.note.isNotBlank()) {
-                                Text(exp.note, fontSize = 11.sp, color = TextMuted)
-                            }
-                        }
-                        Text(
-                            "-${CurrencyUtils.formatLkr(exp.amount)}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = StatusRed
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAddDialog) {
-        AddExpenseDialog(
-            onConfirm = { cat, amt, method, ref, note ->
-                viewModel.addExpense(cat, amt, method, ref, note)
-                showAddDialog = false
-            },
-            onDismiss = { showAddDialog = false }
-        )
-    }
-}
-
-@Composable
-fun AddExpenseDialog(
-    onConfirm: (category: String, amount: Double, method: String, reference: String, note: String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var category by remember { mutableStateOf("Electricity") }
-    var amountText by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    var method by remember { mutableStateOf("CASH") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("RECORD SHOP EXPENSE", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Category", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Electricity", "Rent", "Transport", "Tea/Snacks", "Packaging").forEach { c ->
-                        FilterChip(
-                            selected = category == c,
-                            onClick = { category = c },
-                            label = { Text(c, fontSize = 10.sp) }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { amountText = it },
-                    label = { Text("Amount (Rs.) *") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Note / Description") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        val amt = amountText.toDoubleOrNull() ?: 0.0
-                        if (amt > 0) onConfirm(category, amt, method, "", note)
-                    },
-                    enabled = amountText.toDoubleOrNull() != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("SAVE EXPENSE", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-// -------------------------------------------------------------------------------------
 // Cash Register & Shifts Screen
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
@@ -779,11 +934,35 @@ fun CashRegisterScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_CASH)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_CASH),
+            onBack = onBack
+        )
+        return
+    }
+
+    // The shop said it does not run a counted drawer. Explain rather than
+    // showing an open/close routine they have no use for.
+    val cashProfile by viewModel.profile.collectAsState()
+    if (cashProfile?.cashDrawerEnabled != true) {
+        com.example.ui.components.LockedScreenNotice(
+            message = "This shop does not use a cash drawer count. If you want to " +
+                "count your float at the start and end of each day, turn on " +
+                "\"Cash drawer\" in Settings.",
+            onBack = onBack
+        )
+        return
+    }
+
     val shift by viewModel.currentShift.collectAsState()
     var showCashMovementDialog by remember { mutableStateOf(false) }
     var movementType by remember { mutableStateOf("CASH_IN") }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Cash Drawer & Register", fontWeight = FontWeight.Bold) },
@@ -819,7 +998,7 @@ fun CashRegisterScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Opened by ${shift?.staffName ?: "Aslam"} at ${shift?.counterName ?: "Counter 01"} (${CurrencyUtils.formatTimeOnly(shift?.openedAt ?: System.currentTimeMillis())})",
+                        "Opened by ${shift?.staffName.orEmpty().ifBlank { "you" }} at ${shift?.counterName.orEmpty().ifBlank { "the counter" }} (${CurrencyUtils.formatTimeOnly(shift?.openedAt ?: System.currentTimeMillis())})",
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.9f)
                     )
@@ -931,18 +1110,42 @@ fun CashMovementDialog(
 // Staff Screen
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
+// ---------------------------------------------------------------------------
+// Team. Who works here, what each person is allowed to touch, and who is at
+// the till right now. Only reachable with MANAGE_STAFF.
+// ---------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StaffScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_STAFF)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_STAFF),
+            onBack = onBack
+        )
+        return
+    }
+
     val staffList by viewModel.staffList.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
+    var editing by remember { mutableStateOf<StaffEntity?>(null) }
+    var addingNew by remember { mutableStateOf(false) }
+    var permissionsFor by remember { mutableStateOf<StaffEntity?>(null) }
+
+    // A shop that told us "it is just me" has no team to manage. Rather than
+    // showing an empty list, explain how to turn the feature on.
+    val teamMode = profile?.staffEnabled == true
+
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
-                title = { Text("Staff & Cashiers", fontWeight = FontWeight.Bold) },
+                title = { Text("My team", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -951,53 +1154,521 @@ fun StaffScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
             )
         },
+        floatingActionButton = {
+            if (teamMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { addingNew = true },
+                    containerColor = BrandTealPrimary,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add person", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
         containerColor = LightBackground
     ) { padding ->
+        if (!teamMode) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    tint = TextMuted,
+                    modifier = Modifier.size(56.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "You run this shop on your own",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    "Nothing is locked and no PIN is needed. If someone starts helping " +
+                        "you at the counter, switch this on and you can decide exactly " +
+                        "what each person is allowed to do.",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                // Without this the hub card is a dead end: it tells a solo owner
+                // to add staff and then offers no way to do it.
+                Button(
+                    onClick = {
+                        val current = profile ?: BusinessProfileEntity()
+                        viewModel.saveBusinessProfile(current.copy(staffEnabled = true))
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary)
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("I have staff now", fontWeight = FontWeight.Bold)
+                }
+            }
+            return@Scaffold
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text("SWITCH ACTIVE CASHIER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
+                Text(
+                    "Tap a person to change their details, or \"What they can do\" to " +
+                        "allow or block things like changing prices.",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
             }
 
-            items(staffList) { staff ->
-                val isActive = profile?.activeStaffId == staff.id
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = if (isActive) BrandMintSurface else LightSurface),
-                    border = CardDefaults.outlinedCardBorder(),
+            if (staffList.isEmpty()) {
+                item {
+                    com.example.ui.components.HintCard(
+                        text = "No one added yet. Tap \"Add person\" to give a staff member " +
+                            "their own PIN, so every bill shows who sold it."
+                    )
+                }
+            }
+
+            items(staffList, key = { it.id }) { staff ->
+                val resolved = viewModel.permissionsFor(staff)
+                val isAtTill = profile?.activeStaffId == staff.id
+                StaffCard(
+                    staff = staff,
+                    permissionCount = resolved.granted.size,
+                    isCustomised = resolved.isCustomised(),
+                    isAtTill = isAtTill,
+                    onEdit = { editing = staff },
+                    onPermissions = { permissionsFor = staff },
+                    onToggleActive = { viewModel.setStaffActive(staff, !staff.isActive) }
+                )
+            }
+        }
+    }
+
+    if (addingNew || editing != null) {
+        StaffEditorDialog(
+            existing = editing,
+            onSave = { name, phone, role, pin, active ->
+                viewModel.saveStaff(
+                    id = editing?.id ?: 0L,
+                    name = name,
+                    phone = phone,
+                    role = role,
+                    pin = pin,
+                    isActive = active
+                )
+                editing = null
+                addingNew = false
+            },
+            onDismiss = { editing = null; addingNew = false }
+        )
+    }
+
+    permissionsFor?.let { staff ->
+        StaffPermissionsDialog(
+            staff = staff,
+            resolved = viewModel.permissionsFor(staff),
+            onToggle = { perm, allowed -> viewModel.setStaffPermission(staff, perm, allowed) },
+            onReset = { viewModel.resetStaffPermissions(staff); permissionsFor = null },
+            onDismiss = { permissionsFor = null }
+        )
+    }
+}
+
+@Composable
+private fun StaffCard(
+    staff: StaffEntity,
+    permissionCount: Int,
+    isCustomised: Boolean,
+    isAtTill: Boolean,
+    onEdit: () -> Unit,
+    onPermissions: () -> Unit,
+    onToggleActive: () -> Unit
+) {
+    val role = StaffRole.fromName(staff.role)
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (staff.isActive) LightSurface else LightSurfaceVariant
+        ),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.switchActiveStaff(staff) }
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (staff.isActive) BrandMintSurface else LightBorder),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(staff.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("${staff.role} • PIN: **** • ${staff.phone}", fontSize = 12.sp, color = TextSecondary)
-                        }
-                        if (isActive) {
-                            Badge(containerColor = BrandTealPrimary) {
-                                Text("LOGGED IN", color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(4.dp))
-                            }
-                        } else {
-                            TextButton(onClick = { viewModel.switchActiveStaff(staff) }) {
-                                Text("Switch")
+                    Text(
+                        staff.name.take(1).uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        color = if (staff.isActive) BrandTealPrimary else TextMuted
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            staff.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = if (staff.isActive) TextPrimary else TextSecondary
+                        )
+                        if (isAtTill) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(6.dp), color = BrandTealPrimary) {
+                                Text(
+                                    "AT THE TILL",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
                             }
                         }
                     }
+                    Text(
+                        role.friendlyName + if (staff.pin.isNotBlank()) "  ·  PIN set" else "  ·  No PIN",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    if (!staff.isActive) {
+                        Text("Paused — cannot sign in", fontSize = 11.sp, color = StatusAmber)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                if (isCustomised) "$permissionCount things allowed (adjusted)"
+                else "$permissionCount things allowed",
+                fontSize = 11.sp,
+                color = if (isCustomised) StatusBlue else TextMuted
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onPermissions,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("What they can do", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onEdit,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Edit", fontSize = 12.sp)
+                }
+                TextButton(onClick = onToggleActive) {
+                    Text(
+                        if (staff.isActive) "Pause" else "Restore",
+                        fontSize = 12.sp,
+                        color = if (staff.isActive) StatusAmber else StatusGreen
+                    )
                 }
             }
         }
     }
 }
+
+/** Add or edit one person: name, phone, role and their own 4 digit PIN. */
+@Composable
+private fun StaffEditorDialog(
+    existing: StaffEntity?,
+    onSave: (String, String, String, String, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
+    var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
+    var role by remember { mutableStateOf(StaffRole.fromName(existing?.role)) }
+    var pin by remember { mutableStateOf("") }
+    var active by remember { mutableStateOf(existing?.isActive ?: true) }
+
+    val nameOk = name.trim().isNotBlank()
+    val pinOk = pin.isEmpty() || pin.length == 4
+    // A brand new person with no PIN could never sign in.
+    val needsPin = existing == null && pin.length != 4
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    if (existing == null) "Add someone to your team" else "Edit ${existing.name}",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Their name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it.filter { c -> c.isDigit() || c == ' ' } },
+                    label = { Text("Phone (optional)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("What is their job?", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                Spacer(modifier = Modifier.height(6.dp))
+                StaffRole.selectableRoles.forEach { option ->
+                    val selected = role == option
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) BrandMintSurface else LightSurface
+                        ),
+                        border = CardDefaults.outlinedCardBorder(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clickable { role = option }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selected, onClick = { role = option })
+                            Column(modifier = Modifier.padding(start = 4.dp)) {
+                                Text(
+                                    option.friendlyName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = TextPrimary
+                                )
+                                Text(option.summary, fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4) pin = it.filter(Char::isDigit) },
+                    label = {
+                        Text(if (existing == null) "Their 4 number PIN" else "New PIN (leave blank to keep)")
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    supportingText = {
+                        Text(
+                            "They type this to sign in. Every bill records who sold it.",
+                            fontSize = 11.sp
+                        )
+                    },
+                    isError = !pinOk,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (existing != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Can sign in", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Turn off when someone leaves, instead of deleting them.",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Switch(checked = active, onCheckedChange = { active = it })
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Cancel") }
+                    Button(
+                        onClick = { onSave(name, phone, role.roleName, pin, active) },
+                        enabled = nameOk && pinOk && !needsPin,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The permission editor. Grouped by area with plain descriptions, because the
+ * person reading it runs a shop, not a server.
+ */
+@Composable
+private fun StaffPermissionsDialog(
+    staff: StaffEntity,
+    resolved: com.example.data.model.PermissionSet,
+    onToggle: (Permission, Boolean) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val role = StaffRole.fromName(staff.role)
+    val isOwner = role == StaffRole.OWNER
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxHeight(0.88f)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    "What ${staff.name} can do",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    role.friendlyName + " · " + role.summary,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
+                if (isOwner) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    com.example.ui.components.HintCard(
+                        text = "Owners always have full access. To limit someone, " +
+                            "make them a Manager, Senior staff or Cashier instead."
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Permission.grouped().forEach { (group, perms) ->
+                        item(key = "hdr_" + group.name) {
+                            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                                Text(
+                                    group.title.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = BrandTealPrimary
+                                )
+                                Text(group.blurb, fontSize = 10.sp, color = TextMuted)
+                            }
+                        }
+                        items(perms, key = { it.name }) { perm ->
+                            val allowed = resolved.can(perm)
+                            val differs = allowed != role.permissions.contains(perm)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            perm.label,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        if (perm.sensitive) {
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Icon(
+                                                Icons.Default.Lock,
+                                                contentDescription = "Sensitive",
+                                                tint = StatusAmber,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                        if (differs) {
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Text(
+                                                "changed",
+                                                fontSize = 9.sp,
+                                                color = StatusBlue,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(perm.description, fontSize = 11.sp, color = TextSecondary)
+                                }
+                                Switch(
+                                    checked = allowed,
+                                    enabled = !isOwner,
+                                    onCheckedChange = { onToggle(perm, it) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!isOwner && resolved.isCustomised()) {
+                        OutlinedButton(
+                            onClick = onReset,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Reset to standard", fontSize = 12.sp) }
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandTealPrimary),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
 
 // -------------------------------------------------------------------------------------
 // Settings Screen
@@ -1009,13 +1680,15 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val profile by viewModel.profile.collectAsState()
-    var name by remember { mutableStateOf(profile?.name ?: "ABC Stores") }
+    var name by remember { mutableStateOf(profile?.name.orEmpty()) }
     var phone by remember { mutableStateOf(profile?.phone ?: "077 123 4567") }
     var address by remember { mutableStateOf(profile?.address ?: "123 Main Street, Colombo") }
     var footer by remember { mutableStateOf(profile?.receiptFooter ?: "Thank you!") }
     var printerWidth by remember { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.Bold) },
@@ -1136,6 +1809,94 @@ fun SettingsScreen(
                     Icon(Icons.Default.RestartAlt, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Re-run Setup Wizard")
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// Activity Log — a plain, readable trail of everything that matters
+// -------------------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActivityLogScreen(
+    viewModel: PosViewModel,
+    onBack: () -> Unit
+) {
+    val entries by viewModel.auditLog.collectAsState()
+    val permissions by viewModel.permissions.collectAsState()
+
+    if (!permissions.can(Permission.VIEW_AUDIT)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = permissions.denialMessage(Permission.VIEW_AUDIT),
+            onBack = onBack
+        )
+        return
+    }
+
+    Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
+        topBar = {
+            TopAppBar(
+                title = { Text("Activity log", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
+            )
+        },
+        containerColor = LightBackground
+    ) { padding ->
+        if (entries.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                com.example.ui.components.EmptyState(
+                    icon = Icons.Default.History,
+                    title = "Nothing here yet",
+                    message = "Refunds, price changes, sign-ins and settings changes will show up here."
+                )
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(entries, key = { it.id }) { entry ->
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = LightSurface),
+                    border = CardDefaults.outlinedCardBorder(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                entry.description,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "${entry.staffName.ifBlank { "Someone" }} • ${CurrencyUtils.formatDateTime(entry.timestamp)}",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

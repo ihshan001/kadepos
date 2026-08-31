@@ -1,5 +1,8 @@
 package com.example.ui.screens.more
 
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,8 +30,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.Permission
 import com.example.data.model.BusinessProfileEntity
 import com.example.ui.theme.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import com.example.ui.util.ReceiptDesign
+import com.example.ui.util.ReceiptItemData
 import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosViewModel
 
@@ -46,6 +54,15 @@ fun SettingsConfigurationScreen(
     viewModel: PosViewModel,
     onBack: () -> Unit
 ) {
+    val screenPermissions by viewModel.permissions.collectAsState()
+    if (screenPermissions.cannot(Permission.MANAGE_SETTINGS)) {
+        com.example.ui.components.LockedScreenNotice(
+            message = screenPermissions.denialMessage(Permission.MANAGE_SETTINGS),
+            onBack = onBack
+        )
+        return
+    }
+
     val profile by viewModel.profile.collectAsState()
     val staffList by viewModel.staffList.collectAsState()
 
@@ -53,7 +70,7 @@ fun SettingsConfigurationScreen(
     var selectedSection by remember { mutableStateOf(SettingsSection.ALL) }
 
     // Form state initialized from profile
-    var name by remember(profile) { mutableStateOf(profile?.name ?: "ABC Stores") }
+    var name by remember(profile) { mutableStateOf(profile?.name.orEmpty()) }
     var businessType by remember(profile) { mutableStateOf(profile?.businessType ?: "Retail") }
     var phone by remember(profile) { mutableStateOf(profile?.phone ?: "+94 77 123 4567") }
     var address by remember(profile) { mutableStateOf(profile?.address ?: "123 Galle Road, Colombo") }
@@ -64,7 +81,21 @@ fun SettingsConfigurationScreen(
     // Receipts & Printer
     var receiptFooter by remember(profile) { mutableStateOf(profile?.receiptFooter ?: "Thank you for shopping with us! Please come again.") }
     var receiptShowQr by remember(profile) { mutableStateOf(profile?.receiptShowQr ?: true) }
-    var printerName by remember(profile) { mutableStateOf(profile?.printerName ?: "MTP-58 (Bluetooth)") }
+    // Bill design: what actually gets printed on the customer's receipt.
+    var receiptHeaderName by remember(profile) { mutableStateOf(profile?.receiptHeaderName.orEmpty()) }
+    var receiptHeaderNote by remember(profile) { mutableStateOf(profile?.receiptHeaderNote.orEmpty()) }
+    var receiptShowAddress by remember(profile) { mutableStateOf(profile?.receiptShowAddress ?: true) }
+    var receiptShowPhone by remember(profile) { mutableStateOf(profile?.receiptShowPhone ?: true) }
+    var receiptShowDateTime by remember(profile) { mutableStateOf(profile?.receiptShowDateTime ?: true) }
+    var receiptShowCashier by remember(profile) { mutableStateOf(profile?.receiptShowCashier ?: true) }
+    var receiptShowItemCount by remember(profile) { mutableStateOf(profile?.receiptShowItemCount ?: true) }
+    var receiptReturnNote by remember(profile) { mutableStateOf(profile?.receiptReturnNote.orEmpty()) }
+    var printerName by remember(profile) { mutableStateOf(profile?.printerName.orEmpty()) }
+
+    // Real catalogue rows drive the receipt preview.
+    val allProducts by viewModel.products.collectAsState()
+    val previewItems = remember(allProducts) { allProducts.take(2) }
+    val previewTotal = remember(previewItems) { previewItems.sumOf { it.sellingPrice } }
     var printerWidth by remember(profile) { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
     var autoPrint by remember(profile) { mutableStateOf(profile?.autoPrint ?: false) }
     var receiptStyle by remember(profile) { mutableStateOf(profile?.receiptStyle ?: "Modern") }
@@ -72,6 +103,7 @@ fun SettingsConfigurationScreen(
     // Operations
     var trackStock by remember(profile) { mutableStateOf(profile?.trackStock ?: true) }
     var creditEnabled by remember(profile) { mutableStateOf(profile?.creditEnabled ?: true) }
+    var cashDrawerEnabled by remember(profile) { mutableStateOf(profile?.cashDrawerEnabled ?: false) }
     var staffEnabled by remember(profile) { mutableStateOf(profile?.staffEnabled ?: true) }
     var defaultLowStockThreshold by remember { mutableStateOf("5") }
     var allowNegativeStock by remember { mutableStateOf(false) }
@@ -89,6 +121,8 @@ fun SettingsConfigurationScreen(
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = {
@@ -108,19 +142,28 @@ fun SettingsConfigurationScreen(
                             val current = profile ?: BusinessProfileEntity()
                             viewModel.saveBusinessProfile(
                                 current.copy(
-                                    name = name.trim().ifBlank { "ABC Stores" },
+                                    name = name.trim(),
                                     businessType = businessType,
                                     phone = phone.trim(),
                                     address = address.trim(),
                                     currencySymbol = currencySymbol,
                                     receiptFooter = receiptFooter.trim(),
                                     receiptShowQr = receiptShowQr,
+                                    receiptHeaderName = receiptHeaderName.trim(),
+                                    receiptHeaderNote = receiptHeaderNote.trim(),
+                                    receiptShowAddress = receiptShowAddress,
+                                    receiptShowPhone = receiptShowPhone,
+                                    receiptShowDateTime = receiptShowDateTime,
+                                    receiptShowCashier = receiptShowCashier,
+                                    receiptShowItemCount = receiptShowItemCount,
+                                    receiptReturnNote = receiptReturnNote.trim(),
                                     printerName = printerName,
                                     printerPaperWidth = printerWidth,
                                     autoPrint = autoPrint,
                                     receiptStyle = receiptStyle,
                                     trackStock = trackStock,
                                     creditEnabled = creditEnabled,
+                                    cashDrawerEnabled = cashDrawerEnabled,
                                     staffEnabled = staffEnabled
                                 )
                             )
@@ -300,15 +343,166 @@ fun SettingsConfigurationScreen(
                         title = "2. RECEIPTS & THERMAL PRINTER",
                         subtitle = "Layout, thermal printer connection & customer slip"
                     ) {
+                        Text(
+                            "This is what your customer takes home. Change the wording " +
+                                "here and the preview at the bottom updates straight away.",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = receiptHeaderName,
+                            onValueChange = { receiptHeaderName = it },
+                            label = { Text("Name on the bill") },
+                            placeholder = { Text(name.ifBlank { "Your shop name" }) },
+                            supportingText = {
+                                Text("Leave blank to use your shop name.", fontSize = 10.sp)
+                            },
+                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandTealPrimary) },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = receiptHeaderNote,
+                            onValueChange = { receiptHeaderNote = it },
+                            label = { Text("Line under the name (optional)") },
+                            placeholder = { Text("Wholesale & Retail") },
+                            supportingText = {
+                                Text("Good for a slogan, VAT number or branch.", fontSize = 10.sp)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            "SHOW ON THE BILL",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        ReceiptToggle(
+                            "Date and time",
+                            "When the sale happened. Useful for returns.",
+                            receiptShowDateTime
+                        ) { receiptShowDateTime = it }
+                        ReceiptToggle(
+                            "Shop address",
+                            null,
+                            receiptShowAddress
+                        ) { receiptShowAddress = it }
+                        ReceiptToggle(
+                            "Phone number",
+                            null,
+                            receiptShowPhone
+                        ) { receiptShowPhone = it }
+                        ReceiptToggle(
+                            "Who served them",
+                            "Shows the staff member's name on the bill.",
+                            receiptShowCashier
+                        ) { receiptShowCashier = it }
+                        ReceiptToggle(
+                            "Item and quantity count",
+                            "A line showing how many items and how many units.",
+                            receiptShowItemCount
+                        ) { receiptShowItemCount = it }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = receiptReturnNote,
+                            onValueChange = { receiptReturnNote = it },
+                            label = { Text("Returns / warranty note (optional)") },
+                            placeholder = { Text("Keep this bill for exchanges within 7 days") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = receiptFooter,
                             onValueChange = { receiptFooter = it },
-                            label = { Text("Receipt Footer Message") },
+                            label = { Text("Thank you message") },
                             leadingIcon = { Icon(Icons.Default.FavoriteBorder, null, tint = BrandTealPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            "HOW THE BILL WILL PRINT",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Real sample bill built by the same code that drives the
+                        // printer, so nothing here can drift from what comes out.
+                        val previewText = remember(
+                            name, phone, address, receiptHeaderName, receiptHeaderNote,
+                            receiptShowAddress, receiptShowPhone, receiptShowDateTime,
+                            receiptShowCashier, receiptShowItemCount, receiptReturnNote,
+                            receiptFooter, printerWidth
+                        ) {
+                            CurrencyUtils.buildReceiptText(
+                                businessName = name,
+                                businessPhone = phone,
+                                businessAddress = address,
+                                invoiceNumber = "INV-000123",
+                                timestamp = System.currentTimeMillis(),
+                                cashierName = "Nimal",
+                                customerName = "Walk-in",
+                                items = listOf(
+                                    ReceiptItemData("Sample item one", 2.0, 250.0, 500.0),
+                                    ReceiptItemData("Sample item two", 1.0, 180.0, 180.0)
+                                ),
+                                subtotal = 680.0,
+                                discount = 30.0,
+                                total = 650.0,
+                                paymentMethod = "CASH",
+                                cashReceived = 1000.0,
+                                change = 350.0,
+                                footerMessage = receiptFooter,
+                                paperWidth = printerWidth,
+                                design = ReceiptDesign(
+                                    headerName = receiptHeaderName,
+                                    headerNote = receiptHeaderNote,
+                                    showAddress = receiptShowAddress,
+                                    showPhone = receiptShowPhone,
+                                    showDateTime = receiptShowDateTime,
+                                    showCashier = receiptShowCashier,
+                                    showItemCount = receiptShowItemCount,
+                                    returnNote = receiptReturnNote
+                                )
+                            )
+                        }
+
+                        Surface(
+                            color = ReceiptPaper,
+                            shape = RoundedCornerShape(4.dp),
+                            border = CardDefaults.outlinedCardBorder(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = previewText,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                lineHeight = 12.sp,
+                                color = ReceiptText,
+                                softWrap = false,
+                                modifier = Modifier
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(10.dp)
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("Thermal Printer Hardware", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
@@ -427,6 +621,26 @@ fun SettingsConfigurationScreen(
                                 Text("Enable traditional Sri Lankan credit book workflow", fontSize = 11.sp, color = TextSecondary)
                             }
                             Switch(checked = creditEnabled, onCheckedChange = { creditEnabled = it })
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Cash drawer count", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                                Text(
+                                    "Count your float at the start of the day and again when " +
+                                        "you close, so the app can tell you if cash is missing. " +
+                                        "Leave this off if you just keep money in a box.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(checked = cashDrawerEnabled, onCheckedChange = { cashDrawerEnabled = it })
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -555,19 +769,28 @@ fun SettingsConfigurationScreen(
                         val current = profile ?: BusinessProfileEntity()
                         viewModel.saveBusinessProfile(
                             current.copy(
-                                name = name.trim().ifBlank { "ABC Stores" },
+                                name = name.trim(),
                                 businessType = businessType,
                                 phone = phone.trim(),
                                 address = address.trim(),
                                 currencySymbol = currencySymbol,
                                 receiptFooter = receiptFooter.trim(),
                                 receiptShowQr = receiptShowQr,
+                                receiptHeaderName = receiptHeaderName.trim(),
+                                receiptHeaderNote = receiptHeaderNote.trim(),
+                                receiptShowAddress = receiptShowAddress,
+                                receiptShowPhone = receiptShowPhone,
+                                receiptShowDateTime = receiptShowDateTime,
+                                receiptShowCashier = receiptShowCashier,
+                                receiptShowItemCount = receiptShowItemCount,
+                                receiptReturnNote = receiptReturnNote.trim(),
                                 printerName = printerName,
                                 printerPaperWidth = printerWidth,
                                 autoPrint = autoPrint,
                                 receiptStyle = receiptStyle,
                                 trackStock = trackStock,
                                 creditEnabled = creditEnabled,
+                                cashDrawerEnabled = cashDrawerEnabled,
                                 staffEnabled = staffEnabled
                             )
                         )
@@ -633,18 +856,26 @@ fun SettingsConfigurationScreen(
                             Text(address, fontSize = 10.sp, color = ReceiptText)
                             Text(phone, fontSize = 10.sp, color = ReceiptText)
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Test Item 500ml", fontSize = 11.sp, color = ReceiptText)
-                                Text("Rs. 240.00", fontSize = 11.sp, color = ReceiptText, fontWeight = FontWeight.Bold)
+                            // Preview uses this shop's real items, so what you
+                            // see is what the printer will actually produce.
+                            previewItems.forEach { previewItem ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(previewItem.name, fontSize = 11.sp, color = ReceiptText)
+                                    Text(
+                                        CurrencyUtils.formatLkr(previewItem.sellingPrice),
+                                        fontSize = 11.sp,
+                                        color = ReceiptText,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Test Bakery Loaf", fontSize = 11.sp, color = ReceiptText)
-                                Text("Rs. 180.00", fontSize = 11.sp, color = ReceiptText, fontWeight = FontWeight.Bold)
+                            if (previewItems.isEmpty()) {
+                                Text("Add items to see them here", fontSize = 11.sp, color = ReceiptDashed)
                             }
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("TOTAL PAID (CASH)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ReceiptText)
-                                Text("Rs. 420.00", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
+                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTealPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(receiptFooter, fontSize = 9.sp, color = ReceiptText)
@@ -662,7 +893,7 @@ fun SettingsConfigurationScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Looks Perfect ✓", fontWeight = FontWeight.Bold)
+                        Text("Looks good", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -752,4 +983,28 @@ private fun shouldShowSection(
     if (selectedSection != SettingsSection.ALL && selectedSection != section) return false
     if (query.isBlank()) return true
     return keywords.contains(query, ignoreCase = true) || section.title.contains(query, ignoreCase = true)
+}
+
+/** One on/off line in the bill designer. */
+@Composable
+private fun ReceiptToggle(
+    title: String,
+    subtitle: String?,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            if (subtitle != null) {
+                Text(subtitle, fontSize = 10.sp, color = TextSecondary)
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }

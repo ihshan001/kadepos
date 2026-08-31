@@ -2,7 +2,9 @@ package com.example
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
-import com.example.ui.theme.MyApplicationTheme
+import com.example.data.model.BusinessProfileEntity
+import com.example.ui.screens.onboarding.OnboardingFlow
+import com.example.ui.theme.KadePosTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -20,16 +22,19 @@ class GreetingScreenshotTest {
   @get:Rule val composeTestRule = createComposeRule()
 
   @Test
-  fun greeting_screenshot() {
+  fun welcome_step_screenshot() {
     composeTestRule.setContent {
-      MyApplicationTheme {
-        com.example.ui.screens.onboarding.WelcomeScreen(
-          onGetStarted = {},
-          onSkip = {}
+      KadePosTheme {
+        OnboardingFlow(
+          profile = BusinessProfileEntity(),
+          currentStep = 1,
+          onStepChange = {},
+          onFinish = { _, _ -> },
+          onOpenPrinterSetup = {}
         )
       }
     }
 
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/welcome.png")
   }
 }

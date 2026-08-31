@@ -6,25 +6,50 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "business_profile")
 data class BusinessProfileEntity(
     @PrimaryKey val id: Int = 1,
-    val name: String = "ABC Stores",
-    val businessType: String = "Retail", // Retail, Service, Both, Food, Repairs
-    val phone: String = "+94 77 123 4567",
-    val address: String = "123 Galle Road, Colombo",
+    val name: String = "",
+    val businessType: String = "Retail", // Retail, Service, Both, Food, Repair
+    val shopTypeKey: String = "", // GROCERY, FOOD_CAFE, PHARMACY, ... chosen during setup
+    val phone: String = "",
+    val address: String = "",
     val currencySymbol: String = "Rs.",
     val managementLevel: String = "BILL_STOCK", // JUST_BILL, BILL_STOCK, MANAGE_BUSINESS
     val trackStock: Boolean = true,
     val creditEnabled: Boolean = true,
-    val staffEnabled: Boolean = true,
+    /**
+     * Whether this shop runs a counted cash drawer with an open/close routine.
+     * Plenty of small shops just put money in a box and never reconcile a
+     * float, so the whole day-open / day-close flow is optional.
+     */
+    val cashDrawerEnabled: Boolean = false,
+    val staffEnabled: Boolean = false,
     val receiptStyle: String = "Modern", // Minimal, Classic, Detailed, Modern
-    val receiptFooter: String = "Thank you for shopping with us! Please come again.",
-    val receiptShowQr: Boolean = true,
-    val printerName: String = "MTP-58 (Bluetooth)",
+    val receiptFooter: String = "Thank you! Please come again.",
+    val receiptShowQr: Boolean = false,
+    // --- What the printed bill shows. All editable under Settings > Bill design. ---
+    /** Overrides the shop name on the receipt only. Blank = use the business name. */
+    val receiptHeaderName: String = "",
+    /** Free line under the shop name, e.g. "Wholesale & Retail" or a VAT number. */
+    val receiptHeaderNote: String = "",
+    val receiptShowAddress: Boolean = true,
+    val receiptShowPhone: Boolean = true,
+    val receiptShowDateTime: Boolean = true,
+    val receiptShowCashier: Boolean = true,
+    val receiptShowItemCount: Boolean = true,
+    /** Adds a "Please keep this bill for returns" style line above the footer. */
+    val receiptReturnNote: String = "",
+    // Printer hardware configuration
+    val printerName: String = "",
+    val printerAddress: String = "", // MAC address for Bluetooth, IP address for Wi-Fi
+    val printerConnectionType: String = "NONE", // NONE, BLUETOOTH, WIFI
+    val printerPort: Int = 9100, // network printers, 9100 is the ESC/POS standard
     val printerPaperWidth: String = "58mm", // 58mm, 80mm
-    val printerConnected: Boolean = true,
+    val printerConnected: Boolean = false,
     val autoPrint: Boolean = false,
     val isConfigured: Boolean = false,
-    val activeStaffId: Long = 1L,
-    val activeStaffName: String = "Owner",
+    val activeStaffId: Long = 0L,
+    val activeStaffName: String = "",
+    val activeStaffRole: String = "Owner",
+    val requirePinOnOpen: Boolean = false,
     val language: String = "English"
 )
 
@@ -37,6 +62,12 @@ data class ProductEntity(
     val barcode: String = "",
     val sku: String = "",
     val category: String = "General",
+    /**
+     * The shop type this product belongs to (GROCERY, PHARMACY, ...).
+     * Products are always filtered by the active shop type so one business
+     * never sees another business type's catalogue.
+     */
+    val shopType: String = "",
     val unit: String = "Piece", // Piece, Bottle, Box, Packet, Kg, g, L, ml, Meter, Service
     val currentStock: Double = 0.0,
     val lowStockThreshold: Double = 5.0,
@@ -186,11 +217,34 @@ data class StaffEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val phone: String = "",
-    val role: String = "Cashier", // Owner, Manager, Cashier, Stock Assistant
-    val pin: String = "1234",
+    val role: String = "Cashier", // Owner, Manager, Supervisor, Cashier
+    val pin: String = "",
     val isActive: Boolean = true,
     val totalSalesCount: Int = 0,
-    val totalSalesAmount: Double = 0.0
+    val totalSalesAmount: Double = 0.0,
+    /**
+     * Per-person tweaks on top of the role, as comma separated Permission
+     * names. Stored as text so adding a permission never needs a migration,
+     * and unknown names are ignored rather than crashing an older record.
+     */
+    val extraPermissions: String = "",
+    val revokedPermissions: String = ""
+)
+
+/**
+ * Audit trail for sensitive actions (price changes, refunds, voids, cash movements,
+ * staff logins). Financial history must never silently disappear.
+ */
+@Entity(tableName = "audit_log")
+data class AuditLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val staffId: Long = 0,
+    val staffName: String = "",
+    val action: String, // SALE, REFUND, VOID, PRICE_CHANGE, DISCOUNT, CASH_IN, CASH_OUT, LOGIN, ...
+    val description: String,
+    val amount: Double = 0.0,
+    val reference: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "cash_register_shifts")
@@ -198,7 +252,7 @@ data class CashRegisterShiftEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val counterName: String = "Counter 01",
     val staffId: Long = 1L,
-    val staffName: String = "Aslam",
+    val staffName: String = "",
     val openedAt: Long = System.currentTimeMillis(),
     val closedAt: Long? = null,
     val openingCash: Double = 10000.0,
@@ -230,4 +284,21 @@ data class HeldSaleEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val totalAmount: Double,
     val itemsCount: Int
+)
+
+// ---------------------------------------------------------------------------
+// Projections. Not tables - just the shapes the aggregate queries return when
+// rebuilding the cached balances from their ledgers.
+// ---------------------------------------------------------------------------
+
+/** One product's true stock, summed from `stock_movements`. */
+data class ProductStockTotal(
+    val productId: Long,
+    val total: Double
+)
+
+/** One customer's true credit balance, summed from `credit_transactions`. */
+data class CustomerCreditTotal(
+    val customerId: Long,
+    val total: Double
 )

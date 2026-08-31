@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">The System</string>
+    <string name="app_name">KadePOS</string>
+    <string name="app_tagline">Open. Sell. Done.</string>
 </resources>

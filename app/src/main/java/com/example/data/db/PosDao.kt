@@ -6,6 +6,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.example.data.model.AuditLogEntity
+import com.example.data.model.NotificationEntity
+import com.example.data.model.NotificationSettingsEntity
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
@@ -13,6 +16,8 @@ import com.example.data.model.CreditTransactionEntity
 import com.example.data.model.CustomerEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.HeldSaleEntity
+import com.example.data.model.ProductStockTotal
+import com.example.data.model.CustomerCreditTotal
 import com.example.data.model.ProductEntity
 import com.example.data.model.PurchaseEntity
 import com.example.data.model.PurchaseItemEntity
@@ -37,20 +42,42 @@ interface PosDao {
     suspend fun saveProfile(profile: BusinessProfileEntity)
 
     // --- Products ---
-    @Query("SELECT * FROM products WHERE isArchived = 0 ORDER BY isFavourite DESC, name ASC")
-    fun getAllProducts(): Flow<List<ProductEntity>>
+    // Every product read is scoped to the active shop type so a grocery never
+    // sees pharmacy items and vice-versa. Products saved before a shop type
+    // existed (shopType = "") stay visible to their owner.
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND (shopType = :shopType OR shopType = '') " +
+            "ORDER BY isFavourite DESC, name ASC"
+    )
+    fun getProductsForShopType(shopType: String): Flow<List<ProductEntity>>
 
-    @Query("SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 AND currentStock <= lowStockThreshold ORDER BY currentStock ASC")
-    fun getLowStockProducts(): Flow<List<ProductEntity>>
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 " +
+            "AND (shopType = :shopType OR shopType = '') AND currentStock <= lowStockThreshold " +
+            "ORDER BY currentStock ASC"
+    )
+    fun getLowStockProducts(shopType: String): Flow<List<ProductEntity>>
 
-    @Query("SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 AND currentStock <= 0")
-    fun getOutOfStockProducts(): Flow<List<ProductEntity>>
+    @Query(
+        "SELECT * FROM products WHERE isArchived = 0 AND isTracked = 1 " +
+            "AND (shopType = :shopType OR shopType = '') AND currentStock <= 0"
+    )
+    fun getOutOfStockProducts(shopType: String): Flow<List<ProductEntity>>
+
+    @Query("SELECT COUNT(*) FROM products WHERE shopType = :shopType")
+    suspend fun countProductsForShopType(shopType: String): Int
+
+    @Query("DELETE FROM products WHERE shopType != :shopType AND shopType != ''")
+    suspend fun deleteProductsOutsideShopType(shopType: String)
 
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun getProductById(id: Long): ProductEntity?
 
-    @Query("SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 LIMIT 1")
-    suspend fun getProductByBarcode(barcode: String): ProductEntity?
+    @Query(
+        "SELECT * FROM products WHERE barcode = :barcode AND isArchived = 0 " +
+            "AND (shopType = :shopType OR shopType = '') LIMIT 1"
+    )
+    suspend fun getProductByBarcode(barcode: String, shopType: String): ProductEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProduct(product: ProductEntity): Long
@@ -70,8 +97,33 @@ interface PosDao {
     @Query("DELETE FROM products")
     suspend fun clearAllProducts()
 
-    @Query("UPDATE products SET currentStock = currentStock + :delta, updatedAt = :time WHERE id = :id")
-    suspend fun adjustProductStock(id: Long, delta: Double, time: Long = System.currentTimeMillis())
+    // ---- Derived stock ------------------------------------------------------
+    // There is deliberately no "add this delta to the stored total" query here.
+    // That is exactly the operation that loses a sale when two devices do it at
+    // once, so the only way to change stock is to append a movement.
+    // stock_movements is the ledger; products.currentStock is only a cache of
+    // its running total. Two devices that both sell the last unit each append a
+    // movement, and the sum is still right - whereas two writes to a stored
+    // total would lose one of the sales. Recompute, never trust the cache.
+
+    /** The true stock for one product: the sum of every movement ever recorded. */
+    @Query("SELECT COALESCE(SUM(changeQty), 0.0) FROM stock_movements WHERE productId = :productId")
+    suspend fun sumStockMovements(productId: Long): Double
+
+    /** True stock for every product that has any movement history. */
+    @Query("SELECT productId, COALESCE(SUM(changeQty), 0.0) AS total FROM stock_movements GROUP BY productId")
+    suspend fun sumAllStockMovements(): List<ProductStockTotal>
+
+    /** Overwrites the cached figure with a known-correct value. */
+    @Query("UPDATE products SET currentStock = :stock, updatedAt = :time WHERE id = :id")
+    suspend fun setProductStock(id: Long, stock: Double, time: Long = System.currentTimeMillis())
+
+    @Query("SELECT COUNT(*) FROM stock_movements WHERE productId = :productId")
+    suspend fun countStockMovements(productId: Long): Int
+
+    /** All products, one shot. Used when seeding the opening stock ledger. */
+    @Query("SELECT * FROM products WHERE isArchived = 0")
+    suspend fun getAllProductsSync(): List<ProductEntity>
 
     // --- Sales ---
     @Query("SELECT * FROM sales ORDER BY timestamp DESC")
@@ -120,8 +172,40 @@ interface PosDao {
     @Query("DELETE FROM customers WHERE id = :id")
     suspend fun deleteCustomer(id: Long)
 
-    @Query("UPDATE customers SET creditBalance = creditBalance + :delta WHERE id = :id")
-    suspend fun updateCustomerCredit(id: Long, delta: Double)
+    // ---- Derived credit -----------------------------------------------------
+    // As with stock, there is no increment-the-balance query. Append to the
+    // ledger and recompute; that is the only safe order.
+    // credit_transactions is the ledger; customers.creditBalance is a cache.
+    // Goods taken on credit add to what they owe, payments subtract. The signed
+    // convention lives in one place - here - so no caller can get it wrong.
+
+    /**
+     * What this customer actually owes: everything they took on credit, less
+     * everything they have paid back. ADJUSTMENT rows carry their own sign.
+     */
+    @Query(
+        "SELECT COALESCE(SUM(CASE " +
+            "WHEN type = 'PAYMENT' THEN -amount " +
+            "ELSE amount END), 0.0) " +
+            "FROM credit_transactions WHERE customerId = :customerId"
+    )
+    suspend fun sumCreditTransactions(customerId: Long): Double
+
+    /** True balance for every customer with any credit history. */
+    @Query(
+        "SELECT customerId, COALESCE(SUM(CASE " +
+            "WHEN type = 'PAYMENT' THEN -amount " +
+            "ELSE amount END), 0.0) AS total " +
+            "FROM credit_transactions GROUP BY customerId"
+    )
+    suspend fun sumAllCreditTransactions(): List<CustomerCreditTotal>
+
+    /** Overwrites the cached balance with a known-correct value. */
+    @Query("UPDATE customers SET creditBalance = :balance WHERE id = :id")
+    suspend fun setCustomerCredit(id: Long, balance: Double)
+
+    @Query("SELECT COUNT(*) FROM credit_transactions WHERE customerId = :customerId")
+    suspend fun countCreditTransactions(customerId: Long): Int
 
     @Query("SELECT * FROM credit_transactions WHERE customerId = :customerId ORDER BY timestamp DESC")
     fun getCreditTransactions(customerId: Long): Flow<List<CreditTransactionEntity>>
@@ -230,6 +314,13 @@ interface PosDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCashMovement(movement: CashMovementEntity): Long
 
+    // --- Audit Log ---
+    @Query("SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 300")
+    fun getAuditLog(): Flow<List<AuditLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAuditLog(entry: AuditLogEntity): Long
+
     // --- Held Sales ---
     @Query("SELECT * FROM held_sales ORDER BY timestamp DESC")
     fun getHeldSales(): Flow<List<HeldSaleEntity>>
@@ -251,13 +342,15 @@ interface PosDao {
         val preparedItems = items.map { it.copy(saleId = saleId) }
         insertSaleItems(preparedItems)
 
-        // Decrement product stock if tracked
+        // Record the stock going out. The movement is the truth; the figure on
+        // the product row is a cache we refresh from it immediately after. This
+        // whole function is a @Transaction, so the movement and the refreshed
+        // cache commit together or not at all.
         for (item in preparedItems) {
             if (item.productId != null && item.productId > 0) {
                 val prod = getProductById(item.productId)
                 if (prod != null && prod.isTracked) {
-                    val newStock = (prod.currentStock - item.quantity).coerceAtLeast(0.0)
-                    adjustProductStock(prod.id, -item.quantity)
+                    val newStock = (sumStockMovements(prod.id) - item.quantity).coerceAtLeast(0.0)
                     insertStockMovement(
                         StockMovementEntity(
                             productId = prod.id,
@@ -270,28 +363,30 @@ interface PosDao {
                             staffName = sale.cashierName
                         )
                     )
+                    setProductStock(prod.id, newStock)
                 }
             }
         }
 
-        // If credit sale, update customer
+        // Goods taken on credit: append to the ledger, then recompute what they
+        // owe from it rather than incrementing the stored balance.
         if (sale.paymentMethod == "CREDIT" || sale.creditAmount > 0) {
             val cid = sale.customerId
             if (cid != null && cid > 0) {
                 val creditToAdd = if (sale.paymentMethod == "CREDIT") sale.totalAmount else sale.creditAmount
-                updateCustomerCredit(cid, creditToAdd)
-                val cust = getCustomerById(cid)
+                val newBalance = sumCreditTransactions(cid) + creditToAdd
                 insertCreditTransaction(
                     CreditTransactionEntity(
                         customerId = cid,
                         saleId = saleId,
                         type = "SALE_CREDIT",
                         amount = creditToAdd,
-                        balanceAfter = cust?.creditBalance ?: creditToAdd,
+                        balanceAfter = newBalance,
                         paymentMethod = "CREDIT",
                         note = "Credit sale ${sale.invoiceNumber}"
                     )
                 )
+                setCustomerCredit(cid, newBalance)
             }
         }
 
@@ -305,4 +400,40 @@ interface PosDao {
 
         return saleId
     }
+
+    // ---- Notifications ---------------------------------------------------
+
+    @Query("SELECT * FROM notifications ORDER BY timestamp DESC LIMIT :limit")
+    fun getNotifications(limit: Int = 200): Flow<List<NotificationEntity>>
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE isRead = 0")
+    fun getUnreadNotificationCount(): Flow<Int>
+
+    @Insert
+    suspend fun insertNotification(entry: NotificationEntity): Long
+
+    @Query("UPDATE notifications SET isRead = 1 WHERE id = :id")
+    suspend fun markNotificationRead(id: Long)
+
+    @Query("UPDATE notifications SET isRead = 1")
+    suspend fun markAllNotificationsRead()
+
+    @Query("DELETE FROM notifications")
+    suspend fun clearNotifications()
+
+    /**
+     * Keeps the table small on a phone that never gets cleaned up. Called after
+     * each insert so the newest 500 entries survive and older ones fall away.
+     */
+    @Query("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY timestamp DESC LIMIT :keep)")
+    suspend fun trimNotifications(keep: Int = 500)
+
+    @Query("SELECT * FROM notification_settings WHERE id = 1")
+    fun getNotificationSettings(): Flow<NotificationSettingsEntity?>
+
+    @Query("SELECT * FROM notification_settings WHERE id = 1")
+    suspend fun getNotificationSettingsSync(): NotificationSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveNotificationSettings(settings: NotificationSettingsEntity)
 }

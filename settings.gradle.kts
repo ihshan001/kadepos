@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "The System"
+rootProject.name = "KadePOS"
 
 include(":app")

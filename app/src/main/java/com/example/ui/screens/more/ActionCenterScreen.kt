@@ -2,6 +2,9 @@ package com.example.ui.screens.more
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -216,6 +219,8 @@ fun ActionCenterScreen(
     }
 
     Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Top),
         topBar = {
             TopAppBar(
                 title = {
@@ -363,7 +368,7 @@ fun ActionCenterScreen(
                             } else if (item.targetCustomer != null) {
                                 // Launch WhatsApp reminder
                                 val cust = item.targetCustomer
-                                val msg = "Hi ${cust.name}, your outstanding balance at ${profile?.name ?: "ABC Stores"} is ${CurrencyUtils.formatLkr(cust.creditBalance)}. Thank you!"
+                                val msg = "Hi ${cust.name}, your outstanding balance at ${profile?.name.orEmpty()} is ${CurrencyUtils.formatLkr(cust.creditBalance)}. Thank you!"
                                 try {
                                     val intent = Intent(Intent.ACTION_VIEW).apply {
                                         data = Uri.parse("https://api.whatsapp.com/send?phone=${cust.phone}&text=${Uri.encode(msg)}")
