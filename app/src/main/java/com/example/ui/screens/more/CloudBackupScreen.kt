@@ -217,8 +217,8 @@ fun CloudBackupScreen(
 
 @Composable
 private fun StatusCard(cloud: CloudSettings) {
-    val lastBackup = cloud.lastBackupAt.takeIf { it > 0L }?.let { timestamp() }
-    val lastSync = cloud.lastSyncAt.takeIf { it > 0L }?.let { timestamp() }
+    val lastBackup = cloud.lastBackupAt.takeIf { it > 0L }?.let { timestamp(it) }
+    val lastSync = cloud.lastSyncAt.takeIf { it > 0L }?.let { timestamp(it) }
     Card(
         colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant),
         shape = RoundedCornerShape(14.dp)
