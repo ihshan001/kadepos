@@ -1131,7 +1131,7 @@ fun ProductQuickCard(
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            "Tap to choose a variant",
+                            "Tap to choose an option",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = BrandPrimary

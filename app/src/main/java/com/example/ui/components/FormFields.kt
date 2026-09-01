@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -247,7 +246,3 @@ fun NumberTextField(
  */
 @OptIn(ExperimentalLayoutApi::class)
 fun Modifier.keyboardPadding(): Modifier = this.imePadding()
-
-/** Convenience so screens do not need to remember two things. */
-@Composable
-fun rememberFormScrollState(): ScrollState = rememberScrollState()
