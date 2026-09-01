@@ -4,6 +4,7 @@ import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -74,6 +75,13 @@ fun ProductsScreen(
     var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var restockingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+
+    // Removing a whole starter list one item at a time is the slowest job in
+    // the shop, so the list can be put into a selecting mode: tick the ones
+    // that are not yours, then take them out in one go.
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    var showRemoveConfirm by remember { mutableStateOf(false) }
 
     val categories = remember(parentRows) {
         buildList {
@@ -249,6 +257,71 @@ fun ProductsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // 1b. Taking out several items at once.
+            // The starter list is a guess, so most shops need to clear a few
+            // things they will never sell. Ticking a batch beats opening each
+            // one and pressing Remove on its own.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (!selectionMode) {
+                    TextButton(onClick = {
+                        selectionMode = true
+                        selectedIds = emptySet()
+                    }) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            tint = BrandPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Select items", fontWeight = FontWeight.Bold, color = BrandPrimary)
+                    }
+                } else {
+                    TextButton(onClick = {
+                        selectedIds = if (selectedIds.size == filteredProducts.size) {
+                            emptySet()
+                        } else {
+                            filteredProducts.map { it.id }.toSet()
+                        }
+                    }) {
+                        Text(
+                            if (selectedIds.size == filteredProducts.size) "Untick all" else "Tick all",
+                            fontWeight = FontWeight.Bold,
+                            color = BrandPrimary
+                        )
+                    }
+
+                    Text(
+                        "${selectedIds.size} chosen",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary
+                    )
+
+                    Row {
+                        TextButton(onClick = {
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        }) {
+                            Text("Done", color = TextSecondary)
+                        }
+                        Button(
+                            onClick = { showRemoveConfirm = true },
+                            enabled = selectedIds.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                        ) {
+                            Text("Remove", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
             // 2. Search Input
             OutlinedTextField(
                 value = searchQuery,
@@ -357,6 +430,15 @@ fun ProductsScreen(
                     items(filteredProducts, key = { it.id }) { product ->
                         ProductItemCard(
                             product = product,
+                            selectionMode = selectionMode,
+                            selected = product.id in selectedIds,
+                            onToggleSelect = {
+                                selectedIds = if (product.id in selectedIds) {
+                                    selectedIds - product.id
+                                } else {
+                                    selectedIds + product.id
+                                }
+                            },
                             onEdit = { editingProduct = product },
                             onRestock = { restockingProduct = product },
                             onAddToCart = {
@@ -371,6 +453,55 @@ fun ProductsScreen(
                                 }
                             }
                         )
+                    }
+                }
+            }
+        }
+    }
+
+    // Nothing is taken out until it is confirmed. A mis-tick should cost one
+    // more tap, not a rebuilt catalogue.
+    if (showRemoveConfirm) {
+        val count = selectedIds.size
+        Dialog(onDismissRequest = { showRemoveConfirm = false }) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = LightSurface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        if (count == 1) "Remove this item?" else "Remove these $count items?",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "They stop showing in this list and on the Sell tab. " +
+                            "Old bills that mention them stay exactly as they are.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showRemoveConfirm = false },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Keep") }
+                        Button(
+                            onClick = {
+                                showRemoveConfirm = false
+                                viewModel.archiveProducts(selectedIds.toList())
+                                selectionMode = false
+                                selectedIds = emptySet()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = StatusRed)
+                        ) { Text(if (count == 1) "Remove" else "Remove $count") }
                     }
                 }
             }
@@ -489,7 +620,10 @@ fun ProductItemCard(
     product: ProductEntity,
     onEdit: () -> Unit,
     onRestock: () -> Unit,
-    onAddToCart: () -> Unit
+    onAddToCart: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelect: () -> Unit = {}
 ) {
     val profit = (product.sellingPrice - product.costPrice).coerceAtLeast(0.0)
     val marginPct = if (product.sellingPrice > 0) ((profit / product.sellingPrice) * 100).toInt() else 0
@@ -498,11 +632,17 @@ fun ProductItemCard(
 
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = LightSurface),
-        border = CardDefaults.outlinedCardBorder(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) BrandPrimary.copy(alpha = 0.10f) else LightSurface
+        ),
+        border = if (selected) {
+            BorderStroke(2.dp, BrandPrimary)
+        } else {
+            CardDefaults.outlinedCardBorder()
+        },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .clickable { if (selectionMode) onToggleSelect() else onEdit() }
             .testTag("product_item_${product.id}")
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -511,6 +651,16 @@ fun ProductItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { onToggleSelect() },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .offset(x = (-6).dp)
+                            .testTag("product_select_${product.id}")
+                    )
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(

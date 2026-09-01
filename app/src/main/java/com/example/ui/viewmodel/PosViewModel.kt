@@ -9,7 +9,6 @@ import com.example.data.cloud.CloudSettingsRepository
 import com.example.data.cloud.CloudSyncScheduler
 import com.example.data.db.PosDatabase
 import com.example.data.model.BusinessProfileEntity
-import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
 import com.example.data.model.CustomerEntity
 import com.example.data.model.ExpenseEntity
@@ -1185,6 +1184,31 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.archiveProduct(productId)
             showMessage("Product archived")
+        }
+    }
+
+    /**
+     * Removes several items at once, with the stock lines underneath them.
+     *
+     * A starter catalogue is only a guess: the shop picks a type and gets a
+     * list of items, some of which it has never stocked and never will.
+     * Removing those one at a time turns a five minute setup into an
+     * afternoon, which is why the Items tab can select a batch.
+     *
+     * They are archived rather than deleted, exactly as editing an item's
+     * options already does, because past bills still refer to them.
+     */
+    fun archiveProducts(productIds: List<Long>) {
+        val ids = productIds.distinct().filter { it > 0 }
+        if (ids.isEmpty()) return
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
+        viewModelScope.launch {
+            ids.forEach { id ->
+                repository.getVariantChildren(id)
+                    .forEach { child -> repository.archiveProduct(child.id) }
+                repository.archiveProduct(id)
+            }
+            showMessage(if (ids.size == 1) "Removed 1 item" else "Removed ${ids.size} items")
         }
     }
 

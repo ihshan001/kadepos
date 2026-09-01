@@ -25,7 +25,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -472,6 +471,11 @@ private fun shopTypeIcon(name: String): ImageVector = when (name) {
     "menu_book" -> Icons.Default.MenuBook
     "content_cut" -> Icons.Default.ContentCut
     "build" -> Icons.Default.Build
+    "local_florist" -> Icons.Default.LocalFlorist
+    "do_not_step" -> Icons.Default.Hiking
+    "hardware" -> Icons.Default.Hardware
+    "toys" -> Icons.Default.Toys
+    "sports_soccer" -> Icons.Default.SportsSoccer
     else -> Icons.Default.Storefront
 }
 

@@ -21,8 +21,18 @@ drifted, search the file for the symbol named in the last column.
 | Storage grammar (no migration needed) | `app/src/main/java/com/example/data/model/ProductOptions.kt:50` | `ProductOptions` |
 | Price/stock engine, `=` combination lines | `app/src/main/java/com/example/data/model/VariantModels.kt:139` | `buildCombinations` |
 | Honest one-line card summary | same file `:227` | `summary` |
+| Remove several items in one go | `app/src/main/java/com/example/ui/viewmodel/PosViewModel.kt:1202` | `archiveProducts` |
+| Selection mode + confirm step | `app/src/main/java/com/example/ui/screens/products/ProductsScreen.kt:261` | `ProductsScreen` |
 
 **Path:** bottom tab **Items** → **+ Add item** (or tap a card's **Edit**).
+
+**Clearing out the starter list:** the starter catalogue is a guess, so a shop
+will always see a few things it has never stocked. **Items** → **Select items**
+puts the list into a ticking mode; **Tick all** / **Untick all** work across
+whatever is currently listed, and **Remove** takes the whole ticked batch out
+after one confirmation. Removed items are *archived*, not deleted — they leave
+the list and the Sell tab, but old bills that mention them still add up, so the
+stock ledger and the sales history stay honest.
 
 ## Section 2 — Adaptive sell / add-to-cart
 
@@ -99,6 +109,40 @@ Owner and Manager only.
 | Error banner, top, tap to dismiss | same file `:285` | `Alignment.TopCenter` |
 | ~1 second for confirmations | `app/src/main/java/com/example/ui/viewmodel/PosViewModel.kt:590` | `showMessage` |
 | 5 seconds for errors | same file `:604` | `showAlert` |
+
+## Starter catalogue
+
+Thirteen shop types, fifty items each — **650 items, no name used twice**
+(`tools/generate_catalog.py`).
+
+| Shop type | Key |
+|---|---|
+| Grocery & Provisions | `GROCERY` |
+| Takeaway & Cafe | `FOOD_CAFE` |
+| Pharmacy | `PHARMACY` |
+| Clothing & Tailoring | `CLOTHING` |
+| Phones & Electronics | `ELECTRONICS` |
+| Books & Stationery | `STATIONERY` |
+| Salon & Spa | `SALON` |
+| Mobile & Device Repair | `REPAIR` |
+| Flower & Gift Shop | `FLOWERS` |
+| Shoe & Footwear Store | `SHOES` |
+| Hardware & Building Supplies | `HARDWARE` |
+| Toys, Gifts & Fancy Goods | `TOYS_GIFTS` |
+| Sports & Fitness | `SPORTS` |
+
+**Do not hand-edit `data/model/ProductCatalogPresets.kt`** — it is generated.
+Edit `tools/generate_catalog.py` and re-run it:
+
+```
+python3 tools/generate_catalog.py
+```
+
+The generator refuses to write unless every type has exactly fifty items and no
+product name repeats, so adding a shop type is safe by construction. Picking a
+type during setup needs no code change either: `ShopTypeStep`
+(`ui/screens/onboarding/OnboardingFlow.kt:393`) just walks
+`ProductCatalogPresets.shopTypes`.
 
 ## Units everywhere
 

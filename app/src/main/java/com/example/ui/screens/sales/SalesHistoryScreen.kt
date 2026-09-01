@@ -3,7 +3,6 @@ package com.example.ui.screens.sales
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -31,7 +30,6 @@ import com.example.data.model.SaleItemEntity
 import com.example.ui.screens.sell.SaleCompleteDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
-import com.example.ui.viewmodel.PosTab
 import com.example.data.model.Permission
 import com.example.ui.viewmodel.PosViewModel
 import kotlinx.coroutines.launch

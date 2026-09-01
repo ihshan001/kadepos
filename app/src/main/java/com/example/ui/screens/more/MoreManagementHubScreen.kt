@@ -27,8 +27,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.data.model.CashRegisterShiftEntity
-import com.example.data.model.ExpenseEntity
 import com.example.data.model.StaffEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
