@@ -284,7 +284,7 @@ fun SettingsConfigurationScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(SettingsSection.values()) { section ->
+                    items(SettingsSection.values().toList(), key = { it.name }) { section ->
                         FilterChip(
                             selected = selectedSection == section,
                             onClick = { selectedSection = section },

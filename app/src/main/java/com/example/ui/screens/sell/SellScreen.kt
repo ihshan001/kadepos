@@ -578,7 +578,7 @@ fun SellScreen(
                                 .fillMaxWidth()
                                 .heightIn(max = if (cart.isEmpty()) 420.dp else 220.dp)
                         ) {
-                            items(filteredProducts) { product ->
+                            items(filteredProducts, key = { it.id }) { product ->
                                 val cartQty = cart.find { it.productId == product.id }?.quantity ?: 0.0
                                 val hasVariants = hasVariantOptions(products, product)
                                 ProductQuickCard(

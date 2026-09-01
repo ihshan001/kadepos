@@ -755,7 +755,7 @@ fun SuppliersScreen(
                 }
             }
 
-            items(suppliers) { sup ->
+            items(suppliers, key = { it.id }) { sup ->
                 Card(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = LightSurface),

@@ -88,7 +88,7 @@ fun ProductsScreen(
                     .distinct()
                     .sorted()
             )
-        }
+        }.distinct()
     }
 
     // Flat lists that feed the dropdowns on the Add/Edit product dialog, so a
@@ -304,7 +304,7 @@ fun ProductsScreen(
                         icon = Icons.Default.WarningAmber
                     )
                 }
-                items(categories) { cat ->
+                items(categories, key = { it }) { cat ->
                     val countInCat = parentRows.count { p ->
                         val path = listOf(p.category, p.subCategory)
                             .filter { it.isNotBlank() }

@@ -395,7 +395,7 @@ fun SalesHistoryScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(filteredSales) { sale ->
+                    items(filteredSales, key = { it.id }) { sale ->
                         SaleHistoryCard(
                             sale = sale,
                             onClick = {

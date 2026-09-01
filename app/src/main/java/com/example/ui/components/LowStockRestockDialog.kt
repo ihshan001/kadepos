@@ -151,7 +151,7 @@ fun LowStockRestockDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(lowStockList) { prod ->
+                        items(lowStockList, key = { it.id }) { prod ->
                             val isSelected = prod.id == currentProduct.id
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
