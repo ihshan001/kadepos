@@ -32,11 +32,16 @@ drifted, search the file for the symbol named in the last column.
 | Choice tile, greyed when sold out | same file `:1476` | `OptionTile` |
 | Per-combination stock deduction | `app/src/main/java/com/example/data/db/PosDao.kt:339` | `completeSaleTransaction` |
 
+| A note written on the bill | `app/src/main/java/com/example/ui/screens/sell/SellScreen.kt:2683` | `BillNoteDialog` |
+
 **Path:** bottom tab **Sell** → tap a product. An item with no options goes
 straight onto the bill; one with options opens the picker.
 **New path:** **Items** → **Add to Cart** on an item with options now jumps to
 the Sell tab with that item's picker already open
 (`PosViewModel.openVariantPickerOnSellTab`).
+**Bill note:** the **Note** chip next to the current bill. The note is saved
+with the sale and cleared when the cart is cleared, so it never leaks onto the
+next bill.
 
 ## Section 3 — Provider access + Cloud & Backup
 

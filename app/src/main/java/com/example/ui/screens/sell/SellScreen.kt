@@ -68,6 +68,7 @@ import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
 import com.example.data.model.VariantCatalog
 import com.example.data.model.VariantCombination
+import com.example.ui.components.AppTextField
 import com.example.ui.components.BatchReorderDialog
 import com.example.ui.components.HintCard
 import com.example.ui.components.LowStockRestockDialog
@@ -139,6 +140,7 @@ fun SellScreen(
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showHoldDialog by remember { mutableStateOf(false) }
+    var showBillNoteDialog by remember { mutableStateOf(false) }
     var showHeldListDialog by remember { mutableStateOf(false) }
     var showCheckoutSheet by remember { mutableStateOf(false) }
     var showShiftOverviewDialog by remember { mutableStateOf(false) }
@@ -636,6 +638,17 @@ fun SellScreen(
                                     leadingIcon = { Icon(Icons.Default.Percent, contentDescription = null, modifier = Modifier.size(12.dp)) }
                                 )
                                 AssistChip(
+                                    onClick = { showBillNoteDialog = true },
+                                    label = { Text(if (billNote.isBlank()) "Note" else "Note ✓", fontSize = 11.sp) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Description,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                )
+                                AssistChip(
                                     onClick = { showHoldDialog = true },
                                     label = { Text("Hold", fontSize = 11.sp) },
                                     leadingIcon = { Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(12.dp)) }
@@ -646,6 +659,38 @@ fun SellScreen(
                                 ) {
                                     Text("Clear", color = StatusRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                    }
+
+                    // The note stays with the bill, so say so where it is set.
+                    if (billNote.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BrandSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showBillNoteDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = BrandPrimary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    billNote,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = BrandPrimaryDark,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
                     }
@@ -934,6 +979,17 @@ fun SellScreen(
                 showDiscountDialog = false
             },
             onDismiss = { showDiscountDialog = false }
+        )
+    }
+
+    if (showBillNoteDialog) {
+        BillNoteDialog(
+            note = billNote,
+            onSave = {
+                viewModel.setBillNote(it)
+                showBillNoteDialog = false
+            },
+            onDismiss = { showBillNoteDialog = false }
         )
     }
 
@@ -2605,6 +2661,88 @@ fun DiscountDialog(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Apply", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// Bill note: a line that travels with the bill
+// -------------------------------------------------------------------------------------
+/**
+ * A short note the shop writes on a bill.
+ *
+ * It carries the things a total cannot say — "deliver after five", a customer's
+ * own reference, or which order this was for. It is stored with the sale and
+ * comes back with it when the bill is looked up again, so it is worth showing
+ * on the bill itself while the sale is still open.
+ */
+@Composable
+private fun BillNoteDialog(
+    note: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember(note) { mutableStateOf(note) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "Note on this bill",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 17.sp,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Kept with this sale, so you can read it back later.",
+                    fontSize = 11.sp,
+                    color = TextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                AppTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = "Note",
+                    placeholder = "e.g. Deliver after 5pm",
+                    singleLine = false,
+                    minLines = 3
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { onSave("") },
+                        enabled = text.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Text("Remove", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = { onSave(text.trim()) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Text("Save note", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }

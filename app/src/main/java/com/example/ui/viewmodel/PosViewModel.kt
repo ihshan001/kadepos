@@ -1347,34 +1347,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createPurchase(
-        supplier: SupplierEntity?,
-        invoiceNumber: String,
-        items: List<PurchaseItemEntity>,
-        paidAmount: Double,
-        notes: String
-    ) {
-        if (!allow(Permission.MANAGE_SUPPLIERS)) return
-        viewModelScope.launch {
-            val total = items.sumOf { it.lineTotal }
-            val due = (total - paidAmount).coerceAtLeast(0.0)
-            val purchase = PurchaseEntity(
-                supplierId = supplier?.id,
-                supplierName = supplier?.name ?: "Local Supplier",
-                invoiceNumber = invoiceNumber.ifBlank { "PO-${(1000..9999).random()}" },
-                timestamp = System.currentTimeMillis(),
-                totalAmount = total,
-                paidAmount = paidAmount,
-                dueAmount = due,
-                paymentStatus = if (due <= 0) "PAID" else if (paidAmount > 0) "PARTIAL" else "DUE",
-                itemsCount = items.size,
-                notes = notes
-            )
-            repository.insertPurchase(purchase, items)
-            showMessage("Purchase recorded. Stock updated automatically.")
-        }
-    }
-
     /**
      * Record a delivery the simple way: supplier, total bill, how much was paid
      * now. Most small shops get a handwritten invoice and do not want to key in
@@ -1887,44 +1859,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
      * Installs the 50 starter items for [shopTypeKey] and removes anything
      * belonging to a different shop type, so categories can never overlap.
      */
-    fun installShopCatalog(shopTypeKey: String) {
-        if (!allow(Permission.MANAGE_PRODUCTS)) return
-        viewModelScope.launch {
-            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
-            repository.installShopTypeCatalog(preset.key, preset.products)
-            audit("CATALOG", "Loaded starter items for ${preset.displayName}")
-            showMessage("${preset.products.size} ${preset.displayName} items are ready")
-        }
-    }
-
-    /** Removes starter items without touching anything the owner added. */
-    fun clearStarterCatalog() {
-        if (!allow(Permission.MANAGE_PRODUCTS)) return
-        viewModelScope.launch {
-            repository.clearAllProducts()
-            audit("CATALOG", "Cleared the product list")
-            showMessage("Product list cleared")
-        }
-    }
-
-    /** Switching shop type wipes the old catalogue so nothing overlaps. */
-    fun changeShopType(shopTypeKey: String, loadStarterItems: Boolean) {
-        if (!allow(Permission.MANAGE_SETTINGS)) return
-        viewModelScope.launch {
-            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
-            val current = repository.getProfileSync() ?: BusinessProfileEntity()
-            repository.saveProfile(
-                current.copy(shopTypeKey = preset.key, businessType = preset.businessType)
-            )
-            if (loadStarterItems) {
-                repository.installShopTypeCatalog(preset.key, preset.products)
-            } else {
-                repository.pruneProductsOutsideShopType(preset.key)
-            }
-            audit("CATALOG", "Switched shop type to ${preset.displayName}")
-            showMessage("Now set up for ${preset.displayName}")
-        }
-    }
 
     fun deleteProduct(productId: Long) {
         if (!allow(Permission.DELETE_RECORDS)) return
@@ -2039,11 +1973,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             audit("SETUP", "Setup finished for ${profileToSave.name}")
             showMessage("You're all set. Start selling!")
         }
-    }
-
-    /** Restarts the setup wizard from the settings screen. */
-    fun restartSetup() {
-        _onboardingStep.value = 1
     }
 
     /**
