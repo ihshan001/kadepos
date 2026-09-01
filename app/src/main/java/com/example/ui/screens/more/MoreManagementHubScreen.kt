@@ -94,6 +94,8 @@ fun HubMenuScreen(
 ) {
     val profile by viewModel.profile.collectAsState()
     val permissions by viewModel.permissions.collectAsState()
+    val isOwnerOrManager =
+        permissions.role == StaffRole.OWNER || permissions.role == StaffRole.MANAGER
     val customers by viewModel.customers.collectAsState()
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val printerConnected by viewModel.isPrinterConnected.collectAsState()
@@ -293,14 +295,20 @@ fun HubMenuScreen(
                 }
             }
 
-            if (permissions.can(Permission.MANAGE_SETTINGS) && cloudSettings?.providerEnabled == true) {
+            // Cloud & Backup belongs to the people who own the shop's data.
+            // The provider has to allow it first, and then only an Owner or a
+            // Manager sees it — a cashier has no business holding the backup
+            // switch.
+            if (cloudSettings?.providerEnabled == true && isOwnerOrManager) {
                 item {
                     HubActionCard(
-                        title = "Backup & Cloud",
-                        subtitle = if (cloudSettings?.ownerGmail.isNullOrBlank()) {
-                            "Connect a Google account to keep a safe copy"
+                        title = "Cloud & Backup",
+                        subtitle = if (cloudSettings?.ownerBackupEnabled == false) {
+                            "Switched off on this phone"
+                        } else if (cloudSettings?.ownerGmail.isNullOrBlank()) {
+                            "Connect your Google mail to keep a safe copy"
                         } else {
-                            "Connected to ${cloudSettings?.ownerGmail}"
+                            "Copying to ${cloudSettings?.ownerGmail}"
                         },
                         icon = Icons.Default.Cloud,
                         onClick = { onSelectDestination(MoreDestination.CLOUD) }

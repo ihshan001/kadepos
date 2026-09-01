@@ -144,6 +144,37 @@ fun CloudBackupScreen(
 
                 item {
                     Card(
+                        colors = CardDefaults.cardColors(containerColor = LightSurface),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Copy this shop's data",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        "Turn it off to stop backups from this phone. Nothing is deleted.",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Switch(
+                                    checked = cloud.ownerBackupEnabled,
+                                    onCheckedChange = { viewModel.setOwnerBackupEnabled(it) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(
                         colors = CardDefaults.cardColors(containerColor = BrandSurface),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -227,9 +258,20 @@ private fun StatusCard(cloud: CloudSettings) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(if (cloud.lastError.isBlank()) StatusGreen else StatusAmber))
+                val healthy = cloud.lastError.isBlank() && cloud.ownerBackupEnabled
+                Box(
+                    modifier = Modifier.size(10.dp).clip(CircleShape)
+                        .background(if (healthy) StatusGreen else StatusAmber)
+                )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(if (cloud.lastError.isBlank()) "Cloud backup is active" else "Cloud backup needs attention", fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        !cloud.ownerBackupEnabled -> "Backup is switched off on this phone"
+                        cloud.lastError.isNotBlank() -> "Cloud backup needs attention"
+                        else -> "Cloud backup is active"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text("Last backup: ${lastBackup ?: "Not yet"}", fontSize = 13.sp, color = TextSecondary)
