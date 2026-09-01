@@ -118,11 +118,11 @@ fun PrinterSetupScreen(
                         Card(
                             shape = RoundedCornerShape(14.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (selected) BrandGoldSurface else LightSurface
+                                containerColor = if (selected) BrandSurface else LightSurface
                             ),
                             border = BorderStroke(
                                 if (selected) 2.dp else 1.dp,
-                                if (selected) BrandGoldPrimary else LightBorder
+                                if (selected) BrandPrimary else LightBorder
                             ),
                             modifier = Modifier
                                 .weight(1f)
@@ -169,7 +169,7 @@ fun PrinterSetupScreen(
                         Switch(
                             checked = p.autoPrint,
                             onCheckedChange = { viewModel.saveBusinessProfile(p.copy(autoPrint = it)) },
-                            colors = SwitchDefaults.colors(checkedTrackColor = BrandGoldPrimary)
+                            colors = SwitchDefaults.colors(checkedTrackColor = BrandPrimary)
                         )
                     }
                 }
@@ -180,7 +180,7 @@ fun PrinterSetupScreen(
             TabRow(
                 selectedTabIndex = tab,
                 containerColor = LightSurface,
-                contentColor = BrandGoldPrimary
+                contentColor = BrandPrimary
             ) {
                 Tab(
                     selected = tab == 0,
@@ -269,7 +269,7 @@ private fun ConnectionStatusCard(
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = LightSurface),
-        border = BorderStroke(1.dp, if (isLive) BrandGoldPrimary else LightBorder)
+        border = BorderStroke(1.dp, if (isLive) BrandPrimary else LightBorder)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -277,13 +277,13 @@ private fun ConnectionStatusCard(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(if (isLive) BrandGoldSurface else LightSurfaceVariant),
+                        .background(if (isLive) BrandSurface else LightSurfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Print,
                         contentDescription = null,
-                        tint = if (isLive) BrandGoldPrimary else TextMuted
+                        tint = if (isLive) BrandPrimary else TextMuted
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -308,7 +308,7 @@ private fun ConnectionStatusCard(
                     Button(
                         onClick = onTestPrint,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("test_print_button")
@@ -421,7 +421,7 @@ private fun WifiSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = BrandGoldPrimary)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = BrandPrimary)
                 Spacer(modifier = Modifier.width(10.dp))
                 Text("Searching your Wi-Fi…", fontSize = 13.sp, color = TextSecondary)
             }
@@ -447,7 +447,7 @@ private fun WifiSection(
             onClick = onScan,
             enabled = !isScanning,
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("scan_wifi")
@@ -473,7 +473,7 @@ private fun WifiSection(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
             )
             OutlinedTextField(
                 value = manualPort,
@@ -483,7 +483,7 @@ private fun WifiSection(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
             )
         }
 
@@ -509,9 +509,9 @@ private fun PrinterRow(
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isConnected) BrandGoldSurface else LightSurface
+            containerColor = if (isConnected) BrandSurface else LightSurface
         ),
-        border = BorderStroke(1.dp, if (isConnected) BrandGoldPrimary else LightBorder),
+        border = BorderStroke(1.dp, if (isConnected) BrandPrimary else LightBorder),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = !isConnected, onClick = onConnect)
@@ -523,7 +523,7 @@ private fun PrinterRow(
             Icon(
                 if (printer.transport == PrinterTransport.BLUETOOTH) Icons.Default.Bluetooth else Icons.Default.Wifi,
                 contentDescription = null,
-                tint = if (isConnected) BrandGoldPrimary else TextSecondary
+                tint = if (isConnected) BrandPrimary else TextSecondary
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -549,7 +549,7 @@ private fun PrinterRow(
                     )
                 }
             } else {
-                Text("Connect", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
+                Text("Connect", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BrandPrimary)
             }
         }
     }

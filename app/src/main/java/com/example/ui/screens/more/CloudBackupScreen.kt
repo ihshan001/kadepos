@@ -112,7 +112,7 @@ fun CloudBackupScreen(
                             Text("Connected Google Account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             if (cloud.ownerGmail.isNotBlank()) {
-                                Text(cloud.ownerGmail, color = BrandGoldPrimary, fontWeight = FontWeight.SemiBold)
+                                Text(cloud.ownerGmail, color = BrandPrimary, fontWeight = FontWeight.SemiBold)
                                 Text("Backups from this device use this account.", fontSize = 12.sp, color = TextSecondary)
                             } else {
                                 Text("No account connected yet. Selling still works normally.", fontSize = 13.sp, color = StatusRed)
@@ -142,7 +142,7 @@ fun CloudBackupScreen(
 
                 item {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                        colors = CardDefaults.cardColors(containerColor = BrandSurface),
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -161,7 +161,7 @@ fun CloudBackupScreen(
                                 Button(
                                     onClick = { viewModel.syncNow() },
                                     modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                                 ) {
                                     Icon(Icons.Default.CloudUpload, contentDescription = null, Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -262,14 +262,14 @@ fun ConnectAccountDialog(
                     accounts.take(6).forEach { email ->
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = if (settings.ownerGmail.equals(email, true)) BrandGoldSurface else LightSurfaceVariant,
+                            color = if (settings.ownerGmail.equals(email, true)) BrandSurface else LightSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onSelect(email) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = BrandGoldPrimary)
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = BrandPrimary)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(email, fontSize = 14.sp)
                             }
@@ -292,7 +292,7 @@ fun ConnectAccountDialog(
             Button(
                 onClick = { if (manual.isNotBlank()) onSelect(manual.trim()) },
                 enabled = manual.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
             ) { Text("Connect") }
         },
         dismissButton = {
@@ -367,7 +367,7 @@ fun ProviderCloudScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                     ) { Text("Unlock") }
                 } else {
                     var providerEmail by remember { mutableStateOf(cloud.providerEmail) }
@@ -452,7 +452,7 @@ fun ProviderCloudScreen(
                             if (saved) onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                     ) { Text("Save provider settings") }
                 }
             }

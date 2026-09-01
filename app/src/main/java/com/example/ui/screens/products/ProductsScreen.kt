@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ProductEntity
 import com.example.data.model.VariantCatalog
+import com.example.data.model.VariantGroupDraft
+import com.example.data.model.VariantOptionDraft
+import com.example.ui.components.DropdownField
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.data.model.Permission
@@ -85,7 +88,21 @@ fun ProductsScreen(
                     .distinct()
                     .sorted()
             )
-        }
+        }.distinct()
+    }
+
+    // Flat lists that feed the dropdowns on the Add/Edit product dialog, so a
+    // shopkeeper picks the category instead of retyping it each time.
+    val categoryOptions = remember(parentRows) {
+        parentRows.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val subCategoryOptions = remember(parentRows) {
+        parentRows.filter { it.subCategory.isNotBlank() }
+            .flatMap { it.subCategory.split(">") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
     }
 
     val filteredProducts = remember(products, parentRows, searchQuery, selectedFilter) {
@@ -147,7 +164,7 @@ fun ProductsScreen(
                 },
                 actions = {
                     IconButton(onClick = { showAddDialog = true }, modifier = Modifier.testTag("add_product_top_btn")) {
-                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandGoldPrimary, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.AddCircle, contentDescription = "Add Product", tint = BrandPrimary, modifier = Modifier.size(28.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
@@ -156,8 +173,8 @@ fun ProductsScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = BrandGoldPrimary,
-                contentColor = BrandOnGold,
+                containerColor = BrandPrimary,
+                contentColor = BrandOnPrimary,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New Product", fontWeight = FontWeight.Bold) },
                 modifier = Modifier.testTag("add_product_fab")
@@ -189,7 +206,7 @@ fun ProductsScreen(
                             CurrencyUtils.formatLkr(totalCatalogValuation),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = BrandGoldPrimary
+                            color = BrandPrimary
                         )
                     }
 
@@ -213,13 +230,13 @@ fun ProductsScreen(
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = BrandGoldSurface
+                            color = BrandSurface
                         ) {
                             Text(
                                 "${parentRows.count { it.isFavourite }} Pinned",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGoldDark,
+                                color = BrandPrimaryDark,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -234,7 +251,7 @@ fun ProductsScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search product name, category, barcode, SKU...", fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(20.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotBlank()) {
                         IconButton(onClick = { searchQuery = "" }) {
@@ -247,7 +264,7 @@ fun ProductsScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextPrimary,
                     unfocusedTextColor = TextPrimary,
-                    focusedBorderColor = BrandGoldPrimary,
+                    focusedBorderColor = BrandPrimary,
                     unfocusedBorderColor = LightBorder,
                     focusedContainerColor = LightSurface,
                     unfocusedContainerColor = LightSurface
@@ -287,7 +304,7 @@ fun ProductsScreen(
                         icon = Icons.Default.WarningAmber
                     )
                 }
-                items(categories) { cat ->
+                items(categories, key = { it }) { cat ->
                     val countInCat = parentRows.count { p ->
                         val path = listOf(p.category, p.subCategory)
                             .filter { it.isNotBlank() }
@@ -321,7 +338,7 @@ fun ProductsScreen(
                         Button(
                             onClick = { showAddDialog = true },
                             shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -350,6 +367,8 @@ fun ProductsScreen(
     if (showAddDialog || editingProduct != null) {
         ProductEditDialog(
             product = editingProduct,
+            categoryOptions = categoryOptions,
+            subCategoryOptions = subCategoryOptions,
             onSave = { id, name, sellPrice, costPrice, barcode, sku, cat, sub, unit, stock, low, tracked, fav, variants ->
                 viewModel.saveProduct(
                     id, name, sellPrice, costPrice, barcode, sku, cat, unit, stock, low,
@@ -394,14 +413,14 @@ fun ProductFilterChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
     val contentColor = when {
-        isSelected -> BrandOnGold
+        isSelected -> BrandOnPrimary
         highlightAmber -> StatusAmber
         else -> TextPrimary
     }
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = when {
-            isSelected -> BrandGoldPrimary
+            isSelected -> BrandPrimary
             highlightAmber -> StatusAmberBg
             else -> LightSurface
         },
@@ -504,7 +523,7 @@ fun ProductItemCard(
                         Spacer(modifier = Modifier.height(5.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = BrandGoldSurface,
+                            color = BrandSurface,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
@@ -513,7 +532,7 @@ fun ProductItemCard(
                                 VariantCatalog.summary(product.variants),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = BrandGoldPrimary,
+                                color = BrandPrimary,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
@@ -526,7 +545,7 @@ fun ProductItemCard(
                         text = CurrencyUtils.formatLkr(product.sellingPrice),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 15.sp,
-                        color = BrandGoldPrimary
+                        color = BrandPrimary
                     )
 
                     if (product.costPrice > 0) {
@@ -606,9 +625,9 @@ fun ProductItemCard(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandGoldPrimary)
+                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(13.dp), tint = BrandPrimary)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
+                            Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandPrimary)
                         }
                     }
 
@@ -656,7 +675,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandGoldPrimary)
+                        Text("INTAKE & RESTOCK", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandPrimary)
                         Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                     IconButton(onClick = onDismiss) {
@@ -669,7 +688,7 @@ fun QuickRestockDialog(
                 // Stock change preview banner
                 Card(
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
+                    colors = CardDefaults.cardColors(containerColor = BrandSurface)
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -680,7 +699,7 @@ fun QuickRestockDialog(
                             Text("Current Stock", fontSize = 10.sp, color = TextSecondary)
                             Text("${product.currentStock.toInt()} ${product.unit}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(16.dp))
                         Column(horizontalAlignment = Alignment.End) {
                             Text("New Stock Level", fontSize = 10.sp, color = TextSecondary)
                             Text("${projectedStock.toInt()} ${product.unit}", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = StatusGreen)
@@ -716,9 +735,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandGoldPrimary,
+                        focusedBorderColor = BrandPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandGoldPrimary
+                        cursorColor = BrandPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -736,9 +755,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandGoldPrimary,
+                        focusedBorderColor = BrandPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandGoldPrimary
+                        cursorColor = BrandPrimary
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
@@ -757,9 +776,9 @@ fun QuickRestockDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = BrandGoldPrimary,
+                        focusedBorderColor = BrandPrimary,
                         unfocusedBorderColor = LightBorder,
-                        cursorColor = BrandGoldPrimary
+                        cursorColor = BrandPrimary
                     ),
                     singleLine = true
                 )
@@ -773,7 +792,7 @@ fun QuickRestockDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Total Intake Value:", fontSize = 12.sp, color = TextSecondary)
-                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandGoldPrimary)
+                    Text(CurrencyUtils.formatLkr(totalExpense), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = BrandPrimary)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -785,7 +804,7 @@ fun QuickRestockDialog(
                         }
                     },
                     enabled = qty > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
@@ -801,6 +820,8 @@ fun QuickRestockDialog(
 @Composable
 fun ProductEditDialog(
     product: ProductEntity?,
+    categoryOptions: List<String> = emptyList(),
+    subCategoryOptions: List<String> = emptyList(),
     onSave: (
         id: Long,
         name: String,
@@ -828,8 +849,21 @@ fun ProductEditDialog(
     var sku by remember { mutableStateOf(product?.sku ?: "") }
     var category by remember { mutableStateOf(product?.category ?: "General") }
     var subCategory by remember { mutableStateOf(product?.subCategory ?: "") }
-    var variants by remember { mutableStateOf(product?.variants ?: "") }
     var unit by remember { mutableStateOf(product?.unit ?: "Piece") }
+
+    // Structured variant editor state. The owner toggles "has options" and then
+    // adds named groups (e.g. "Rice type", "Portion") of choices, each with an
+    // optional extra price. This replaces the old free-text "Name|price" box.
+    var hasVariants by remember { mutableStateOf(product?.variants?.isNotBlank() == true) }
+    var variantGroups by remember {
+        mutableStateOf(
+            if (product != null && product.variants.isNotBlank()) {
+                VariantCatalog.parseDrafts(product.variants, product.sellingPrice)
+            } else {
+                emptyList<VariantGroupDraft>()
+            }
+        )
+    }
     var stockText by remember { mutableStateOf(product?.currentStock?.toInt()?.toString() ?: "10") }
     var lowStockText by remember { mutableStateOf(product?.lowStockThreshold?.toInt()?.toString() ?: "3") }
     var isTracked by remember { mutableStateOf(product?.isTracked ?: true) }
@@ -839,6 +873,15 @@ fun ProductEditDialog(
     val costPrice = costPriceText.toDoubleOrNull() ?: 0.0
     val profit = (sellPrice - costPrice).coerceAtLeast(0.0)
     val margin = if (sellPrice > 0) ((profit / sellPrice) * 100).toInt() else 0
+
+    // Serialised variants string the repository saves ("" when options are off).
+    val variantsString = if (hasVariants) VariantCatalog.encodeDrafts(variantGroups) else ""
+
+    // Live price preview of every purchasable combination, rebuilt as the owner
+    // edits groups, options or the base selling price.
+    val previewCombos = remember(variantsString, sellPrice) {
+        if (variantsString.isBlank()) emptyList() else VariantCatalog.buildCombinations(variantsString, sellPrice)
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -860,7 +903,7 @@ fun ProductEditDialog(
                             text = if (isEdit) "EDIT PRODUCT" else "NEW PRODUCT ENTRY",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.sp,
-                            color = BrandGoldPrimary
+                            color = BrandPrimary
                         )
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close")
@@ -881,75 +924,47 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGoldPrimary,
+                            focusedBorderColor = BrandPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandGoldPrimary
+                            cursorColor = BrandPrimary
                         ),
                         singleLine = true
                     )
                 }
 
-                // Category & Unit Presets
+                // Category & Unit as dropdowns so the owner picks instead of retyping.
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
+                        DropdownField(
                             value = category,
+                            options = categoryOptions,
                             onValueChange = { category = it },
-                            label = { Text("Category") },
-                            placeholder = { Text("Beverages, Grocery...") },
-                            shape = RoundedCornerShape(12.dp),
+                            label = "Category",
                             modifier = Modifier.weight(1.2f),
-                            textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandGoldPrimary,
-                                unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandGoldPrimary
-                            ),
-                            singleLine = true
+                            placeholder = "Beverages, Grocery…"
                         )
-
-                        OutlinedTextField(
+                        DropdownField(
                             value = unit,
+                            options = UNIT_PRESETS,
                             onValueChange = { unit = it },
-                            label = { Text("Unit") },
-                            placeholder = { Text("Piece, Kg...") },
-                            shape = RoundedCornerShape(12.dp),
+                            label = "Unit",
                             modifier = Modifier.weight(0.8f),
-                            textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary,
-                                focusedBorderColor = BrandGoldPrimary,
-                                unfocusedBorderColor = LightBorder,
-                                cursorColor = BrandGoldPrimary
-                            ),
-                            singleLine = true
+                            placeholder = "Piece"
                         )
                     }
                 }
 
-                // Sub-category / category path. Allows "Main > Sub > Sub" so a
-                // shop never has to flatten a food menu or a dress line.
+                // Sub-category as a dropdown of what the shop already uses, with
+                // free text for a new one. The stored value can still be a " > "
+                // path for deep menus.
                 item {
-                    OutlinedTextField(
+                    DropdownField(
                         value = subCategory,
+                        options = subCategoryOptions,
                         onValueChange = { subCategory = it },
-                        label = { Text("Sub-category (optional)") },
-                        placeholder = { Text("e.g. Rice dishes > Biriyani") },
-                        supportingText = { Text("Use a \">\" between levels for endless nesting.", fontSize = 10.sp) },
-                        shape = RoundedCornerShape(12.dp),
+                        label = "Sub-category (optional)",
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGoldPrimary,
-                            unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandGoldPrimary
-                        ),
-                        singleLine = true
+                        placeholder = "e.g. Rice dishes, Biriyani…"
                     )
                 }
 
@@ -960,14 +975,14 @@ fun ProductEditDialog(
                             item {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (unit.equals(u, ignoreCase = true)) BrandGoldPrimary else LightSurfaceVariant,
+                                    color = if (unit.equals(u, ignoreCase = true)) BrandPrimary else LightSurfaceVariant,
                                     modifier = Modifier.clickable { unit = u }
                                 ) {
                                     Text(
                                         u,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (unit.equals(u, ignoreCase = true)) BrandOnGold else TextPrimary,
+                                        color = if (unit.equals(u, ignoreCase = true)) BrandOnPrimary else TextPrimary,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -980,7 +995,7 @@ fun ProductEditDialog(
                 item {
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface)
+                        colors = CardDefaults.cardColors(containerColor = BrandSurface)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -994,9 +1009,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandGoldPrimary,
+                                        focusedBorderColor = BrandPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandGoldPrimary
+                                        cursorColor = BrandPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -1012,9 +1027,9 @@ fun ProductEditDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary,
-                                        focusedBorderColor = BrandGoldPrimary,
+                                        focusedBorderColor = BrandPrimary,
                                         unfocusedBorderColor = LightBorder,
-                                        cursorColor = BrandGoldPrimary
+                                        cursorColor = BrandPrimary
                                     ),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true
@@ -1028,7 +1043,7 @@ fun ProductEditDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Profit: ${CurrencyUtils.formatLkr(profit)} / unit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
-                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldDark)
+                                    Text("Gross Margin: $margin%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandPrimaryDark)
                                 }
                             }
                         }
@@ -1044,7 +1059,7 @@ fun ProductEditDialog(
                         placeholder = { Text("Enter barcode / EAN if any") },
                         trailingIcon = {
                             IconButton(onClick = { barcode = "890" + (10000000..99999999).random().toString() }) {
-                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandGoldPrimary)
+                                Icon(Icons.Default.QrCode, contentDescription = "Auto Generate", tint = BrandPrimary)
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -1053,49 +1068,118 @@ fun ProductEditDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGoldPrimary,
+                            focusedBorderColor = BrandPrimary,
                             unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandGoldPrimary
+                            cursorColor = BrandPrimary
                         ),
                         singleLine = true
                     )
                 }
 
-                // 3.5 Variants / options. If anything is typed here it is not
-                // just stored — the app creates a real product line for each
-                // option, so each one can carry its own price and stock.
+                // 3.5 Structured options & sizes. Instead of typing "Name|price"
+                // lines with slashes, the owner adds named option groups (Rice
+                // type, Portion) and an extra price per choice. Every resulting
+                // combination is still saved as its own stockable product line.
                 item {
-                    OutlinedTextField(
-                        value = variants,
-                        onValueChange = { variants = it },
-                        label = { Text("Variants / options (optional)") },
-                        placeholder = { Text("Regular|650\nFull|750") },
-                        supportingText = {
-                            Text(
-                                "One per line as a name, or Name|price. Deep: groups + prices so each choice changes the price.\n" +
-                                    "Example:\n" +
-                                    "Rice: Basmati|Keeri\n" +
-                                    "Portion: Regular|Full\n" +
-                                    "Basmati/Regular|1200\n" +
-                                    "Basmati/Full|1800\n" +
-                                    "Keeri/Regular|1100\n" +
-                                    "Keeri/Full|1700",
-                                fontSize = 10.sp
-                            )
-                        },
+                    Card(
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGoldPrimary,
-                            unfocusedBorderColor = LightBorder,
-                            cursorColor = BrandGoldPrimary
-                        ),
-                        minLines = 2,
-                        maxLines = 4
-                    )
+                        colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Options & sizes", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(
+                                        "e.g. Biryani > Rice: Keeri/Basmati, Portion: Regular/Full",
+                                        fontSize = 11.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Switch(checked = hasVariants, onCheckedChange = { hasVariants = it })
+                            }
+
+                            if (hasVariants) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    "Set the base Selling Price to your cheapest option, then add the extra for bigger ones.",
+                                    fontSize = 10.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                variantGroups.forEachIndexed { index, group ->
+                                    VariantGroupEditor(
+                                        group = group,
+                                        onGroupChange = { updated ->
+                                            variantGroups = variantGroups.map { g ->
+                                                if (g === group) updated else g
+                                            }
+                                        },
+                                        onRemove = {
+                                            variantGroups = variantGroups.filter { it !== group }
+                                        }
+                                    )
+                                    if (index < variantGroups.lastIndex) Spacer(modifier = Modifier.height(8.dp))
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        variantGroups = variantGroups + VariantGroupDraft(
+                                            name = "",
+                                            options = listOf(VariantOptionDraft("", 0.0), VariantOptionDraft("", 0.0))
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add option group", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                }
+
+                                // Live preview of the combinations + their prices.
+                                if (previewCombos.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        "${previewCombos.size} combinations will be created as stockable lines",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    previewCombos.take(6).forEach { combo ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                combo.displayName.replace("/", " · "),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = TextPrimary
+                                            )
+                                            Text(
+                                                CurrencyUtils.formatLkr(combo.price),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BrandPrimary
+                                            )
+                                        }
+                                    }
+                                    if (previewCombos.size > 6) {
+                                        Text("+${previewCombos.size - 6} more", fontSize = 10.sp, color = TextMuted)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // 4. Inventory tracking controls
@@ -1130,9 +1214,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandGoldPrimary,
+                                            focusedBorderColor = BrandPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandGoldPrimary
+                                            cursorColor = BrandPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1148,9 +1232,9 @@ fun ProductEditDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = TextPrimary,
                                             unfocusedTextColor = TextPrimary,
-                                            focusedBorderColor = BrandGoldPrimary,
+                                            focusedBorderColor = BrandPrimary,
                                             unfocusedBorderColor = LightBorder,
-                                            cursorColor = BrandGoldPrimary
+                                            cursorColor = BrandPrimary
                                         ),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true
@@ -1200,12 +1284,12 @@ fun ProductEditDialog(
                                     low,
                                     isTracked,
                                     isFavourite,
-                                    variants.trim()
+                                    variantsString
                                 )
                             }
                         },
                         enabled = name.isNotBlank() && sellPriceText.toDoubleOrNull() != null,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
@@ -1222,6 +1306,140 @@ fun ProductEditDialog(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Common sell units offered in the Unit dropdown; free text still allowed. */
+private val UNIT_PRESETS = listOf(
+    "Piece", "Kg", "g", "Pack", "Packet", "Bottle", "Box", "Cup",
+    "Jar", "Carton", "Tube", "Litre", "ml", "Meter", "Portion", "Service"
+)
+
+/**
+ * One named option group in the structured variant editor. Shows the group
+ * name field plus a row per option (option name + extra price + remove), so a
+ * product like Biryani becomes "Rice type: Keeri/Basmati" and
+ * "Portion: Regular/Full" without typing any slash/pipe syntax.
+ */
+@Composable
+private fun VariantGroupEditor(
+    group: VariantGroupDraft,
+    onGroupChange: (VariantGroupDraft) -> Unit,
+    onRemove: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = group.name,
+                    onValueChange = { onGroupChange(group.copy(name = it)) },
+                    label = { Text("Option group (e.g. Rice type, Portion)") },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = BrandPrimary,
+                        unfocusedBorderColor = LightBorder,
+                        cursorColor = BrandPrimary
+                    ),
+                    singleLine = true
+                )
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove group", tint = StatusRed)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            group.options.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = option.name,
+                        onValueChange = { text ->
+                            onGroupChange(
+                                group.copy(
+                                    options = group.options.map { o ->
+                                        if (o === option) o.copy(name = text) else o
+                                    }
+                                )
+                            )
+                        },
+                        label = { Text("Option") },
+                        placeholder = { Text("e.g. Keeri, Full…", color = TextMuted) },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1.4f),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandPrimary
+                        ),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = if (option.priceAdjustment == 0.0) "" else option.priceAdjustment.toString(),
+                        onValueChange = { text ->
+                            onGroupChange(
+                                group.copy(
+                                    options = group.options.map { o ->
+                                        if (o === option) o.copy(priceAdjustment = text.toDoubleOrNull() ?: 0.0) else o
+                                    }
+                                )
+                            )
+                        },
+                        label = { Text("+Rs.") },
+                        placeholder = { Text("0", color = TextMuted) },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(0.8f),
+                        textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandPrimary,
+                            unfocusedBorderColor = LightBorder,
+                            cursorColor = BrandPrimary
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                    IconButton(
+                        onClick = {
+                            onGroupChange(group.copy(options = group.options.filter { it !== option }))
+                        }
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove option", tint = TextMuted)
+                    }
+                }
+            }
+
+            TextButton(
+                onClick = { onGroupChange(group.copy(options = group.options + VariantOptionDraft("", 0.0))) },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add option", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

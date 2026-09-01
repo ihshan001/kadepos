@@ -39,9 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.BrandGoldSurface
-import com.example.ui.theme.BrandGoldPrimary
-import com.example.ui.theme.BrandOnGold
+import com.example.ui.theme.BrandSurface
+import com.example.ui.theme.BrandPrimary
+import com.example.ui.theme.BrandOnPrimary
 import com.example.ui.theme.LightBorder
 import com.example.ui.theme.LightSurface
 import com.example.ui.theme.StatusAmber
@@ -68,11 +68,11 @@ fun ChoiceCard(
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) BrandGoldSurface else LightSurface
+            containerColor = if (isSelected) BrandSurface else LightSurface
         ),
         border = BorderStroke(
             width = if (isSelected) 2.dp else 1.dp,
-            color = if (isSelected) BrandGoldPrimary else LightBorder
+            color = if (isSelected) BrandPrimary else LightBorder
         ),
         modifier = modifier
             .fillMaxWidth()
@@ -86,13 +86,13 @@ fun ChoiceCard(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSelected) BrandGoldPrimary else BrandGoldSurface),
+                    .background(if (isSelected) BrandPrimary else BrandSurface),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isSelected) BrandOnGold else BrandGoldPrimary,
+                    tint = if (isSelected) BrandOnPrimary else BrandPrimary,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -117,7 +117,7 @@ fun ChoiceCard(
                 Icon(
                     Icons.Default.CheckCircle,
                     contentDescription = "Chosen",
-                    tint = BrandGoldPrimary,
+                    tint = BrandPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -139,7 +139,7 @@ fun PrimaryActionButton(
         enabled = enabled,
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = BrandGoldPrimary,
+            containerColor = BrandPrimary,
             disabledContainerColor = LightBorder,
             disabledContentColor = TextMuted
         ),
@@ -167,7 +167,7 @@ fun HintCard(
     val (bg, fg) = when (tone) {
         HintTone.INFO -> StatusBlueBg to StatusBlue
         HintTone.WARN -> StatusAmberBg to StatusAmber
-        HintTone.BRAND -> BrandGoldSurface to BrandGoldPrimary
+        HintTone.BRAND -> BrandSurface to BrandPrimary
     }
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -270,10 +270,10 @@ fun EmptyState(
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
-                .background(BrandGoldSurface),
+                .background(BrandSurface),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(30.dp))
+            Icon(icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(30.dp))
         }
         Spacer(modifier = Modifier.height(14.dp))
         Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)

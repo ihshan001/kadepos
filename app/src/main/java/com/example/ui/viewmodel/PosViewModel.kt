@@ -44,6 +44,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -269,9 +271,16 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     private val _showSaleSuccessDialog = MutableStateFlow(false)
     val showSaleSuccessDialog = _showSaleSuccessDialog.asStateFlow()
 
-    // Active UI Messages (Snackbar / Toast notifications)
+    // Active UI Messages. Transient, top-anchored banners that auto-dismiss so
+    // they never sit on top of the Charge bar. `messageImportant` marks errors /
+    // validation problems that deserve a longer, warning-styled banner.
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage = _userMessage.asStateFlow()
+
+    private val _messageImportant = MutableStateFlow(false)
+    val messageImportant = _messageImportant.asStateFlow()
+
+    private var messageJob: Job? = null
 
     val auditLog: StateFlow<List<AuditLogEntity>> = repository.auditLog.stateIn(
         scope = viewModelScope,
@@ -433,7 +442,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     private fun allow(permission: Permission): Boolean {
         if (can(permission)) return true
         val who = permissions.value
-        showMessage(who.denialMessage(permission))
+        showAlert(who.denialMessage(permission))
         viewModelScope.launch {
             repository.recordAudit(
                 staffId = who.staffId,
@@ -460,7 +469,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             block()
             true
         } else {
-            showMessage(permissions.value.denialMessage(permission))
+            showAlert(permissions.value.denialMessage(permission))
             false
         }
     }
@@ -506,7 +515,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             it.isActive && it.role.equals("Owner", ignoreCase = true) && it.pin.isNotBlank()
         }
         if (!ownerCanOpen) {
-            showMessage("Set a PIN on your owner card before signing out.")
+            showAlert("Set a PIN on your owner card before signing out.")
             return
         }
         val who = permissions.value
@@ -552,11 +561,36 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         _onboardingStep.value = step
     }
 
-    fun showMessage(msg: String) {
+    /**
+     * A quick confirmation ("Added Biriyani"). Shows for a short moment then
+     * fades; rapid consecutive adds restart the timer instead of stacking.
+     */
+    fun showMessage(msg: String, durationMs: Long = 1400L) {
+        _messageImportant.value = false
         _userMessage.value = msg
+        messageJob?.cancel()
+        messageJob = viewModelScope.launch {
+            delay(durationMs)
+            _userMessage.value = null
+        }
+    }
+
+    /**
+     * An error / validation problem. Stays longer, styled as a warning, and the
+     * user can swipe/dismiss it early via [clearMessage].
+     */
+    fun showAlert(msg: String, durationMs: Long = 5000L) {
+        _messageImportant.value = true
+        _userMessage.value = msg
+        messageJob?.cancel()
+        messageJob = viewModelScope.launch {
+            delay(durationMs)
+            _userMessage.value = null
+        }
     }
 
     fun clearMessage() {
+        messageJob?.cancel()
         _userMessage.value = null
     }
 
@@ -622,7 +656,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun updateCartItemPrice(index: Int, newPrice: Double) {
         if (newPrice < 0.0) {
-            showMessage("Price cannot be less than zero")
+            showAlert("Price cannot be less than zero")
             return
         }
         requirePermission(Permission.CHANGE_PRICE) {
@@ -691,13 +725,13 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         // A bill of Rs. 20 can never be completed with Rs. 10. Enforced here as
         // well as in checkout, so a shortcut can't bypass the split rule.
         if (paymentMethod == "CASH" && cashReceived < finalTotal - 0.001) {
-            showMessage("Cash received is less than the bill. Split the remaining amount on card or as credit.")
+            showAlert("Cash received is less than the bill. Split the remaining amount on card or as credit.")
             return
         }
         if ((paymentMethod == "CREDIT" || (paymentMethod == "SPLIT" && creditAmount > 0.0)) &&
             _selectedCustomer.value == null
         ) {
-            showMessage("Choose or create a customer before saving a credit sale.")
+            showAlert("Choose or create a customer before saving a credit sale.")
             return
         }
 
@@ -888,7 +922,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         if (!allow(Permission.CREATE_SALE)) return
         val cartItems = _cart.value
         if (cartItems.isEmpty()) {
-            showMessage("Add something to the bill first")
+            showAlert("Add something to the bill first")
             return
         }
 
@@ -1193,7 +1227,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         if (!allow(Permission.MANAGE_SUPPLIERS)) return
         if (name.isBlank()) {
-            showMessage("Enter a supplier name")
+            showAlert("Enter a supplier name")
             return
         }
         viewModelScope.launch {
@@ -1228,7 +1262,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 showMessage(if (id > 0) "Updated supplier $name" else "Added supplier $name")
                 audit("SUPPLIER", if (id > 0) "Updated supplier $name" else "Added supplier $name")
             }.onFailure {
-                showMessage("Could not save the supplier. Please try again.")
+                showAlert("Could not save the supplier. Please try again.")
             }
         }
     }
@@ -1312,7 +1346,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         if (!allow(Permission.MANAGE_SUPPLIERS)) return
         viewModelScope.launch {
             if (totalAmount <= 0.0) {
-                showMessage("Enter the bill amount first")
+                showAlert("Enter the bill amount first")
                 return@launch
             }
             val paid = paidNow.coerceIn(0.0, totalAmount)
@@ -1349,7 +1383,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }.onFailure {
-                showMessage("Could not save the delivery bill. Please try again.")
+                showAlert("Could not save the delivery bill. Please try again.")
             }
         }
     }

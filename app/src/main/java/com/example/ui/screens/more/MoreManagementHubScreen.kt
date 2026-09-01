@@ -134,7 +134,7 @@ fun HubMenuScreen(
                             Icon(
                                 Icons.Default.Notifications,
                                 contentDescription = "Alerts",
-                                tint = BrandGoldPrimary
+                                tint = BrandPrimary
                             )
                         }
                     }
@@ -455,7 +455,7 @@ private fun MyAccessDialog(
                 Button(
                     onClick = onDismiss,
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Close") }
             }
@@ -476,7 +476,7 @@ private fun WhoIsUsingCard(
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandGoldPrimary),
+        colors = CardDefaults.cardColors(containerColor = BrandPrimary),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -487,12 +487,12 @@ private fun WhoIsUsingCard(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(BrandOnGold.copy(alpha = 0.18f)),
+                    .background(BrandOnPrimary.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     personName.take(1).uppercase().ifBlank { "S" },
-                    color = BrandOnGold,
+                    color = BrandOnPrimary,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp
                 )
@@ -501,7 +501,7 @@ private fun WhoIsUsingCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     shopName,
-                    color = BrandOnGold,
+                    color = BrandOnPrimary,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 16.sp
                 )
@@ -511,7 +511,7 @@ private fun WhoIsUsingCard(
                     } else {
                         "$personName · $roleName"
                     },
-                    color = BrandOnGold.copy(alpha = 0.85f),
+                    color = BrandOnPrimary.copy(alpha = 0.85f),
                     fontSize = 12.sp
                 )
             }
@@ -545,10 +545,10 @@ fun HubActionCard(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(BrandGoldSurface),
+                        .background(BrandSurface),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(imageVector = icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(22.dp))
+                    Icon(imageVector = icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(22.dp))
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
@@ -556,8 +556,8 @@ fun HubActionCard(
                         Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
                         if (badge != null) {
                             Spacer(modifier = Modifier.width(6.dp))
-                            Badge(containerColor = BrandGoldPrimary) {
-                                Text(badge, color = BrandOnGold, fontSize = 10.sp)
+                            Badge(containerColor = BrandPrimary) {
+                                Text(badge, color = BrandOnPrimary, fontSize = 10.sp)
                             }
                         }
                     }
@@ -627,21 +627,21 @@ fun ReportsScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandGoldPrimary),
+                    colors = CardDefaults.cardColors(containerColor = BrandPrimary),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
-                        Text("TOTAL RECORDED TURNOVER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandOnGold.copy(alpha = 0.8f))
+                        Text("TOTAL RECORDED TURNOVER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandOnPrimary.copy(alpha = 0.8f))
                         Text(
                             CurrencyUtils.formatLkr(totalTurnover),
                             fontSize = 26.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = BrandOnGold
+                            color = BrandOnPrimary
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Total Bills: ${sales.size}", color = BrandOnGold, fontSize = 12.sp)
-                            Text("Net Profit (Est.): ${CurrencyUtils.formatLkr(estimatedProfit)}", color = BrandOnGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Total Bills: ${sales.size}", color = BrandOnPrimary, fontSize = 12.sp)
+                            Text("Net Profit (Est.): ${CurrencyUtils.formatLkr(estimatedProfit)}", color = BrandOnPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -667,7 +667,7 @@ fun ReportsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         ReportMetricRow(label = "Cash Sales", value = CurrencyUtils.formatLkr(cashSales), color = StatusGreen)
-                        ReportMetricRow(label = "Card Sales", value = CurrencyUtils.formatLkr(cardSales), color = BrandGoldPrimary)
+                        ReportMetricRow(label = "Card Sales", value = CurrencyUtils.formatLkr(cardSales), color = BrandPrimary)
                         ReportMetricRow(label = "Credit Sales (Receivables)", value = CurrencyUtils.formatLkr(creditSales), color = StatusAmber)
                         HorizontalDivider(color = LightBorder)
                         ReportMetricRow(label = "Shop Expenses Paid", value = "-${CurrencyUtils.formatLkr(totalExpenses)}", color = StatusRed)
@@ -720,8 +720,8 @@ fun SuppliersScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddSupplierDialog = true },
-                containerColor = BrandGoldPrimary,
-                contentColor = BrandOnGold,
+                containerColor = BrandPrimary,
+                contentColor = BrandOnPrimary,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New Supplier", fontWeight = FontWeight.Bold) }
             )
@@ -755,7 +755,7 @@ fun SuppliersScreen(
                 }
             }
 
-            items(suppliers) { sup ->
+            items(suppliers, key = { it.id }) { sup ->
                 Card(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = LightSurface),
@@ -870,7 +870,7 @@ fun AddSupplierDialog(
                 Button(
                     onClick = { if (name.isNotBlank()) onSave(name, person, phone, "", "") },
                     enabled = name.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -931,7 +931,7 @@ fun RecordSupplierPaymentDialog(
                         val amount = amountText.toDoubleOrNull() ?: 0.0
                         if (amount > 0) onConfirm(amount, method, note)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -1002,22 +1002,22 @@ fun CashRegisterScreen(
         ) {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = BrandGoldPrimary),
+                colors = CardDefaults.cardColors(containerColor = BrandPrimary),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Text("EXPECTED CASH IN DRAWER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandOnGold.copy(alpha = 0.8f))
+                    Text("EXPECTED CASH IN DRAWER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandOnPrimary.copy(alpha = 0.8f))
                     Text(
                         CurrencyUtils.formatLkr(shift?.expectedCash ?: 10000.0),
                         fontSize = 26.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = BrandOnGold
+                        color = BrandOnPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         "Opened by ${shift?.staffName.orEmpty().ifBlank { "you" }} at ${shift?.counterName.orEmpty().ifBlank { "the counter" }} (${CurrencyUtils.formatTimeOnly(shift?.openedAt ?: System.currentTimeMillis())})",
                         fontSize = 12.sp,
-                        color = BrandOnGold.copy(alpha = 0.9f)
+                        color = BrandOnPrimary.copy(alpha = 0.9f)
                     )
                 }
             }
@@ -1112,7 +1112,7 @@ fun CashMovementDialog(
                         val amt = amountText.toDoubleOrNull() ?: 0.0
                         if (amt > 0) onConfirm(amt, reason, note)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -1174,8 +1174,8 @@ fun StaffScreen(
             if (teamMode) {
                 ExtendedFloatingActionButton(
                     onClick = { addingNew = true },
-                    containerColor = BrandGoldPrimary,
-                    contentColor = BrandOnGold
+                    containerColor = BrandPrimary,
+                    contentColor = BrandOnPrimary
                 ) {
                     Icon(Icons.Default.PersonAdd, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1222,7 +1222,7 @@ fun StaffScreen(
                 Button(
                     onClick = { viewModel.enableTeamForOwner() },
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                 ) {
                     Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1352,13 +1352,13 @@ private fun StaffCard(
                     modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(if (staff.isActive) BrandGoldSurface else LightBorder),
+                        .background(if (staff.isActive) BrandSurface else LightBorder),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         staff.name.take(1).uppercase(),
                         fontWeight = FontWeight.Bold,
-                        color = if (staff.isActive) BrandGoldPrimary else TextMuted
+                        color = if (staff.isActive) BrandPrimary else TextMuted
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -1372,10 +1372,10 @@ private fun StaffCard(
                         )
                         if (isAtTill) {
                             Spacer(modifier = Modifier.width(6.dp))
-                            Surface(shape = RoundedCornerShape(6.dp), color = BrandGoldPrimary) {
+                            Surface(shape = RoundedCornerShape(6.dp), color = BrandPrimary) {
                                 Text(
                                     "AT THE TILL",
-                                    color = BrandOnGold,
+                                    color = BrandOnPrimary,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
@@ -1501,7 +1501,7 @@ private fun StaffEditorDialog(
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (selected) BrandGoldSurface else LightSurface
+                            containerColor = if (selected) BrandSurface else LightSurface
                         ),
                         border = CardDefaults.outlinedCardBorder(),
                         modifier = Modifier
@@ -1576,7 +1576,7 @@ private fun StaffEditorDialog(
                         onClick = { onSave(name, phone, role.roleName, pin, active) },
                         enabled = nameOk && pinOk && !needsPin,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         modifier = Modifier.weight(1f)
                     ) { Text("Save") }
                 }
@@ -1641,7 +1641,7 @@ private fun StaffPermissionsDialog(
                                     group.title.uppercase(),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = BrandGoldPrimary
+                                    color = BrandPrimary
                                 )
                                 Text(group.blurb, fontSize = 10.sp, color = TextMuted)
                             }
@@ -1706,7 +1706,7 @@ private fun StaffPermissionsDialog(
                     Button(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         modifier = Modifier.weight(1f)
                     ) { Text("Done") }
                 }
@@ -1838,7 +1838,7 @@ fun SettingsScreen(
                         )
                         onBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {

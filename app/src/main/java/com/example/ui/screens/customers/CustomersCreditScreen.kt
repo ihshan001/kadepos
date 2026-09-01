@@ -99,8 +99,8 @@ fun CustomersCreditScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddCustomer = true },
-                containerColor = BrandGoldPrimary,
-                contentColor = BrandOnGold,
+                containerColor = BrandPrimary,
+                contentColor = BrandOnPrimary,
                 modifier = Modifier.testTag("add_customer_fab")
             ) {
                 Icon(Icons.Default.PersonAdd, contentDescription = null)
@@ -126,7 +126,7 @@ fun CustomersCreditScreen(
                         1 -> "1 customer to collect from"
                         else -> "${owing.size} customers to collect from"
                     },
-                    accent = BrandGoldPrimary
+                    accent = BrandPrimary
                 )
             }
 
@@ -143,7 +143,7 @@ fun CustomersCreditScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = LightSurface,
                             unfocusedContainerColor = LightSurface,
-                            focusedBorderColor = BrandGoldPrimary
+                            focusedBorderColor = BrandPrimary
                         )
                     )
                 }
@@ -215,7 +215,7 @@ fun CustomersCreditScreen(
             suggestedAmount = customer.creditBalance,
             suggestedLabel = "All of it",
             maxAmount = customer.creditBalance,
-            accent = BrandGoldPrimary,
+            accent = BrandPrimary,
             onConfirm = { amount ->
                 viewModel.recordCustomerCreditPayment(customer.id, amount, "CASH", "")
                 settling = null
@@ -230,7 +230,7 @@ fun CustomersCreditScreen(
             title = "${customer.name} took goods",
             subtitle = "Add this to what they owe",
             confirmLabel = "Add to their book",
-            accent = BrandGoldPrimary,
+            accent = BrandPrimary,
             onConfirm = { amount ->
                 viewModel.recordManualCustomerCredit(customer.id, amount, "Goods taken", "")
                 lending = null
@@ -314,14 +314,14 @@ private fun CustomerSheet(
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape)
-                        .background(BrandGoldSurface),
+                        .background(BrandSurface),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         customer.name.take(1).uppercase(),
                         fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BrandGoldPrimary
+                        color = BrandPrimary
                     )
                 }
                 Spacer(modifier = Modifier.width(14.dp))
@@ -365,7 +365,7 @@ private fun CustomerSheet(
                     Button(
                         onClick = onSettle,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary, contentColor = BrandOnGold),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary, contentColor = BrandOnPrimary),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -516,7 +516,7 @@ private fun AddCustomerSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("customer_name_input"),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -529,7 +529,7 @@ private fun AddCustomerSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -538,7 +538,7 @@ private fun AddCustomerSheet(
                 onClick = { onSave(name.trim(), phone.trim()) },
                 enabled = name.isNotBlank(),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)

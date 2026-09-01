@@ -229,7 +229,7 @@ fun SettingsConfigurationScreen(
                             )
                             onBack()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.padding(end = 8.dp).testTag("save_settings_top")
@@ -270,7 +270,7 @@ fun SettingsConfigurationScreen(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = LightSurface,
                         unfocusedContainerColor = LightSurface,
-                        focusedBorderColor = BrandGoldPrimary,
+                        focusedBorderColor = BrandPrimary,
                         unfocusedBorderColor = LightBorder
                     ),
                     modifier = Modifier.fillMaxWidth().testTag("settings_search_field"),
@@ -284,7 +284,7 @@ fun SettingsConfigurationScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(SettingsSection.values()) { section ->
+                    items(SettingsSection.values().toList(), key = { it.name }) { section ->
                         FilterChip(
                             selected = selectedSection == section,
                             onClick = { selectedSection = section },
@@ -296,8 +296,8 @@ fun SettingsConfigurationScreen(
                                 }
                             },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandGoldPrimary,
-                                selectedLabelColor = BrandOnGold
+                                selectedContainerColor = BrandPrimary,
+                                selectedLabelColor = BrandOnPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         )
@@ -316,7 +316,7 @@ fun SettingsConfigurationScreen(
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Business Name *") },
-                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandGoldPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -341,7 +341,7 @@ fun SettingsConfigurationScreen(
                             value = phone,
                             onValueChange = { phone = it },
                             label = { Text("Phone Number (Sri Lanka default)") },
-                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandGoldPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -352,7 +352,7 @@ fun SettingsConfigurationScreen(
                             value = address,
                             onValueChange = { address = it },
                             label = { Text("Shop Address") },
-                            leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = BrandGoldPrimary) },
+                            leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = BrandPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -419,7 +419,7 @@ fun SettingsConfigurationScreen(
                             supportingText = {
                                 Text("Leave blank to use your shop name.", fontSize = 10.sp)
                             },
-                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandGoldPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Storefront, null, tint = BrandPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -489,7 +489,7 @@ fun SettingsConfigurationScreen(
                             value = receiptFooter,
                             onValueChange = { receiptFooter = it },
                             label = { Text("Thank you message") },
-                            leadingIcon = { Icon(Icons.Default.FavoriteBorder, null, tint = BrandGoldPrimary) },
+                            leadingIcon = { Icon(Icons.Default.FavoriteBorder, null, tint = BrandPrimary) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -569,7 +569,7 @@ fun SettingsConfigurationScreen(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                            colors = CardDefaults.cardColors(containerColor = BrandSurface),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -579,7 +579,7 @@ fun SettingsConfigurationScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Icon(Icons.Default.Print, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(24.dp))
+                                    Icon(Icons.Default.Print, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(printerName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
@@ -588,7 +588,7 @@ fun SettingsConfigurationScreen(
                                 }
                                 Button(
                                     onClick = { showTestPrintDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     modifier = Modifier.testTag("test_print_btn")
@@ -923,7 +923,7 @@ fun SettingsConfigurationScreen(
                         )
                         onBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1002,7 +1002,7 @@ fun SettingsConfigurationScreen(
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("TOTAL PAID (CASH)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ReceiptText)
-                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
+                                Text(CurrencyUtils.formatLkr(previewTotal), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(receiptFooter, fontSize = 9.sp, color = ReceiptText)
@@ -1016,7 +1016,7 @@ fun SettingsConfigurationScreen(
                     Spacer(modifier = Modifier.height(18.dp))
                     Button(
                         onClick = { showTestPrintDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1041,7 +1041,7 @@ fun SettingsConfigurationScreen(
             confirmButton = {
                 Button(
                     onClick = { showBackupSuccessDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                 ) {
                     Text("OK")
                 }
@@ -1066,7 +1066,7 @@ fun SettingsConfigurationScreen(
                         showResetConfirmDialog = false
                         viewModel.setOnboardingStep(1)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                 ) {
                     Text("Open wizard", fontWeight = FontWeight.Bold)
                 }
@@ -1131,7 +1131,7 @@ private fun SettingsCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandGoldPrimary)
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandPrimary)
             Text(subtitle, fontSize = 11.sp, color = TextSecondary)
             Spacer(modifier = Modifier.height(14.dp))
             content()
