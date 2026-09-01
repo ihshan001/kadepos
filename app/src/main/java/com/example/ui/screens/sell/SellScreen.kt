@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -69,10 +68,8 @@ import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
 import com.example.data.model.VariantCatalog
 import com.example.data.model.VariantCombination
-import com.example.data.model.VariantGroup
 import com.example.ui.components.BatchReorderDialog
 import com.example.ui.components.HintCard
-import com.example.ui.components.HintTone
 import com.example.ui.components.LowStockRestockDialog
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
@@ -842,10 +839,6 @@ fun SellScreen(
             parent = parent,
             children = variantChildrenOf(products, parent),
             addedCount = cart.count { it.productId == parent.id || it.name.startsWith(parent.name) },
-            onAddParent = { qty ->
-                viewModel.addToCart(parent, qty)
-                variantPickerProduct = null
-            },
             onAddVariant = { child, qty ->
                 viewModel.addToCart(child, qty)
                 variantPickerProduct = null
@@ -1153,43 +1146,73 @@ fun ProductQuickCard(
 // -------------------------------------------------------------------------------------
 // Variant picker: a product with sizes/colours/portions opens before adding it.
 // -------------------------------------------------------------------------------------
+/**
+ * The adaptive option picker.
+ *
+ * A shop sells the same thing in different shapes, and the number of shapes
+ * differs per item, so the picker follows the item:
+ *
+ *  * no options at all — the grid adds the item straight to the bill;
+ *  * one set (Regular/Full) — one row of choices, then add;
+ *  * two sets (Keeri/Basmati, then Regular/Full) — choose the rice first, then
+ *    the portion, and each choice shows what it costs and what is left.
+ *
+ * Every choice also carries its own count, because every combination is its own
+ * stock line: Green can be sold out while Black still has five. Choices with
+ * nothing left go grey but stay visible, so the owner can see the item exists.
+ */
 @Composable
 fun VariantPickerDialog(
     parent: ProductEntity,
     children: List<ProductEntity>,
     addedCount: Int = 0,
-    onAddParent: (qty: Double) -> Unit,
     onAddVariant: (child: ProductEntity, qty: Double) -> Unit,
     onAddDefinition: (name: String, price: Double, qty: Double) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val groups = VariantCatalog.parseGroups(parent.variants)
-    val combos = VariantCatalog.buildCombinations(parent.variants, parent.sellingPrice)
-
-    // Per-option extra price so each chip can show "+Rs.400" instead of hiding
-    // how the choice moves the price.
-    val extraByOption = remember(parent.variants) {
-        VariantCatalog.parseDrafts(parent.variants, parent.sellingPrice)
-            .flatMap { it.options }
-            .associate { it.name.lowercase() to it.priceAdjustment }
+    val combos = remember(parent.variants, parent.sellingPrice) {
+        VariantCatalog.buildCombinations(parent.variants, parent.sellingPrice)
     }
+    val groups = remember(parent.variants) { VariantCatalog.parseGroups(parent.variants) }
+    val levels = (combos.maxOfOrNull { it.labels.size } ?: 1).coerceAtLeast(1)
 
-    // Pre-select the first option in every group so the price and the Add
-    // button are visible the moment the dialog opens (fewer taps).
-    var selected by remember(parent.id, parent.variants) {
-        mutableStateOf(groups.associate { g -> g.name to g.options.firstOrNull().orEmpty() })
-    }
+    var chosen by remember(parent.id, parent.variants) { mutableStateOf(emptyList<String>()) }
     var qty by remember(parent.id) { mutableStateOf(1.0) }
 
-    val allSelected = groups.all { g -> selected[g.name]?.isNotBlank() == true }
-    val selectedCombo: VariantCombination? = if (allSelected && combos.isNotEmpty()) {
-        combos.firstOrNull { combo ->
-            groups.withIndex().all { (index, group) ->
-                combo.labels.getOrNull(index)
-                    ?.equals(selected[group.name].orEmpty(), ignoreCase = true) == true
-            }
+    /** How many of this exact combination are on the shelf, if we track it. */
+    fun stockFor(combo: VariantCombination): Double? {
+        if (!parent.isTracked) return null
+        return VariantCatalog.findChild(children, parent.id, parent.name, combo)?.currentStock
+    }
+
+    fun matches(prefix: List<String>, combo: VariantCombination): Boolean =
+        prefix.withIndex().all { (index, value) ->
+            combo.labels.getOrNull(index)?.equals(value, ignoreCase = true) == true
         }
-    } else null
+
+    /** The choices offered at [level], narrowed by what was already chosen. */
+    fun optionsAt(level: Int, prefix: List<String>): List<String> =
+        combos.filter { matches(prefix.take(level), it) }
+            .mapNotNull { it.labels.getOrNull(level) }
+            .distinct()
+
+    /** What is left of one choice, adding up every size underneath it. */
+    fun remainingFor(prefix: List<String>): Double? {
+        if (!parent.isTracked) return null
+        val matching = combos.filter { matches(prefix, it) }
+        val known = matching.mapNotNull { stockFor(it) }
+        // No saved stock lines yet: say nothing rather than showing a wrong 0.
+        return if (known.isEmpty()) null else known.sum()
+    }
+
+    /** Cheapest and dearest price under one choice. */
+    fun pricesFor(prefix: List<String>): List<Double> =
+        combos.filter { matches(prefix, it) }.map { it.price }
+
+    val complete = chosen.size >= levels || optionsAt(chosen.size, chosen).isEmpty()
+    val selectedCombo = combos.firstOrNull { it.labels.size == chosen.size && matches(chosen, it) }
+    val selectedStock = selectedCombo?.let { stockFor(it) }
+    val soldOut = parent.isTracked && selectedStock != null && selectedStock <= 0.0
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1210,12 +1233,14 @@ fun VariantPickerDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Choose a variant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = TextPrimary)
                         Text(
-                            listOf(parent.category, parent.subCategory)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" > ")
-                                .ifBlank { "Product" },
+                            parent.name,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 17.sp,
+                            color = TextPrimary
+                        )
+                        Text(
+                            "Choose what you are selling",
                             fontSize = 11.sp,
                             color = TextSecondary
                         )
@@ -1238,234 +1263,271 @@ fun VariantPickerDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                Text("Base item", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                Spacer(modifier = Modifier.height(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = BrandSurface,
-                    border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onAddParent(qty) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(parent.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                            if (parent.isTracked) {
-                                Text(
-                                    "${parent.currentStock.toInt()} ${parent.unit}",
-                                    fontSize = 11.sp,
-                                    color = if (parent.currentStock <= parent.lowStockThreshold) StatusAmber else TextSecondary
+                if (combos.isEmpty()) {
+                    Text(
+                        "This item has no options saved yet. Add them from the Items tab.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+
+                // One block per level already reached. Tapping an earlier level
+                // re-opens it and forgets the deeper choices, which is the only
+                // way back that does not need a Back button.
+                val shownLevels = if (complete) chosen.size else (chosen.size + 1)
+                for (level in 0 until shownLevels.coerceAtMost(levels)) {
+                    val levelName = groups.getOrNull(level)?.name ?: if (level == 0) "Option" else "Size"
+                    val options = optionsAt(level, chosen)
+                    if (options.isEmpty()) continue
+
+                    Spacer(modifier = Modifier.height(if (level == 0) 0.dp else 14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            levelName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (chosen.size > level) {
+                            Text(
+                                "Change",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandPrimary,
+                                modifier = Modifier.clickable { chosen = chosen.take(level) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    options.chunked(2).forEach { pair ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { option ->
+                                val prefix = chosen.take(level) + option
+                                val prices = pricesFor(prefix)
+                                val lowest = prices.minOrNull()
+                                val highest = prices.maxOrNull()
+                                val priceText = when {
+                                    lowest == null || highest == null -> ""
+                                    lowest == highest -> CurrencyUtils.formatLkr(lowest)
+                                    else -> "${CurrencyUtils.formatLkr(lowest)} – ${CurrencyUtils.formatLkr(highest)}"
+                                }
+                                val remaining = remainingFor(prefix)
+                                OptionTile(
+                                    label = option,
+                                    priceText = priceText,
+                                    stockText = when {
+                                        remaining == null -> ""
+                                        remaining <= 0.0 -> "Out of stock"
+                                        else -> "${remaining.toInt()} ${parent.unit} left"
+                                    },
+                                    selected = chosen.getOrNull(level) == option,
+                                    // Greyed out, never hidden: the owner still
+                                    // sees that the size exists.
+                                    outOfStock = remaining != null && remaining <= 0.0,
+                                    onClick = { chosen = prefix },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
+                            if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                         }
-                        Text(CurrencyUtils.formatLkr(parent.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandPrimary)
                     }
                 }
 
-                // Deep options (e.g. Rice type + Portion) show one group at a time,
-                // two per row, with the extra price on each chip.
-                if (groups.isNotEmpty()) {
-                    groups.forEach { group ->
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(group.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        group.options.chunked(2).forEach { pair ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                pair.forEach { option ->
-                                    val isChosen = selected[group.name] == option
-                                    val extra = extraByOption[option.lowercase()] ?: 0.0
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isChosen) BrandSurface else LightSurface,
-                                        border = BorderStroke(
-                                            width = if (isChosen) 2.dp else 1.dp,
-                                            color = if (isChosen) BrandPrimary else LightBorder
-                                        ),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { selected = selected + (group.name to option) }
-                                                .padding(10.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                option,
-                                                fontSize = 13.sp,
-                                                fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
-                                                color = TextPrimary
-                                            )
-                                            Text(
-                                                if (extra == 0.0) "base" else "+${CurrencyUtils.formatLkr(extra)}",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (isChosen) BrandPrimaryDark else TextMuted
-                                            )
-                                        }
-                                    }
-                                }
-                                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                    }
-
-                    if (allSelected && selectedCombo != null) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = BrandSurface,
-                            modifier = Modifier.fillMaxWidth()
+                if (complete && selectedCombo != null) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = BrandSurface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "${parent.name} · ${selectedCombo.displayName}",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = TextPrimary
-                                    )
-                                    Text("${CurrencyUtils.formatLkr(selectedCombo.price)} each", fontSize = 10.sp, color = TextSecondary)
-                                }
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    CurrencyUtils.formatLkr(selectedCombo.price * qty),
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
-                                    color = BrandPrimary
+                                    "${parent.name} · ${selectedCombo.displayName.replace("/", " · ")}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    when {
+                                        selectedStock == null -> "Not counted"
+                                        selectedStock <= 0.0 -> "None left"
+                                        else -> "${selectedStock.toInt()} ${parent.unit} left"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = if (selectedStock != null && selectedStock <= 0.0) StatusRed else TextSecondary
                                 )
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Quantity stepper + Add, one row.
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = LightSurfaceVariant,
-                                border = CardDefaults.outlinedCardBorder()
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { qty = (qty - 1).coerceAtLeast(1.0) }) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Less", tint = TextPrimary)
-                                    }
-                                    Text("${qty.toInt()}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.width(24.dp), textAlign = TextAlign.Center)
-                                    IconButton(onClick = { qty = (qty + 1).coerceAtMost(999.0) }) {
-                                        Icon(Icons.Default.Add, contentDescription = "More", tint = TextPrimary)
-                                    }
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    val child = VariantCatalog.findChild(children, parent.id, parent.name, selectedCombo)
-                                    if (child != null) onAddVariant(child, qty)
-                                    else onAddDefinition("${parent.name} - ${selectedCombo.displayName}", selectedCombo.price, qty)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(50.dp)
-                            ) {
-                                Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("ADD ${selectedCombo.displayName.uppercase()}", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text("Choose one from each group to see the price.", fontSize = 11.sp, color = TextMuted)
-                    }
-
-                    if (children.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text("Stocked lines", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        children.forEach { child ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = LightSurface,
-                                border = CardDefaults.outlinedCardBorder(),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onAddVariant(child, qty) }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(child.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
-                                        if (child.isTracked) {
-                                            Text(
-                                                "${child.currentStock.toInt()} ${child.unit}",
-                                                fontSize = 11.sp,
-                                                color = if (child.currentStock <= child.lowStockThreshold) StatusAmber else TextSecondary
-                                            )
-                                        }
-                                    }
-                                    Text(CurrencyUtils.formatLkr(child.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandPrimary)
-                                }
-                            }
+                            Text(
+                                CurrencyUtils.formatLkr(selectedCombo.price * qty),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                color = BrandPrimary
+                            )
                         }
                     }
-                } else if (combos.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Quick options", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    combos.forEach { combo ->
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = LightSurface,
-                            border = CardDefaults.outlinedCardBorder(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp)
+                            color = LightSurfaceVariant,
+                            border = CardDefaults.outlinedCardBorder()
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        val child = VariantCatalog.findChild(children, parent.id, parent.name, combo)
-                                        if (child != null) onAddVariant(child, qty)
-                                        else onAddDefinition("${parent.name} - ${combo.displayName}", combo.price, qty)
-                                    }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("${parent.name} - ${combo.displayName}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { qty = (qty - 1).coerceAtLeast(1.0) }) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Less", tint = TextPrimary)
                                 }
-                                Text(CurrencyUtils.formatLkr(combo.price), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandPrimary)
+                                Text(
+                                    "${qty.toInt()}",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    modifier = Modifier.width(24.dp),
+                                    textAlign = TextAlign.Center
+                                )
+                                IconButton(onClick = { qty = (qty + 1).coerceAtMost(999.0) }) {
+                                    Icon(Icons.Default.Add, contentDescription = "More", tint = TextPrimary)
+                                }
                             }
                         }
+
+                        Button(
+                            onClick = {
+                                val child = VariantCatalog.findChild(children, parent.id, parent.name, selectedCombo)
+                                if (child != null) {
+                                    onAddVariant(child, qty)
+                                } else {
+                                    onAddDefinition(
+                                        "${parent.name} - ${selectedCombo.displayName}",
+                                        selectedCombo.price,
+                                        qty
+                                    )
+                                }
+                            },
+                            enabled = !soldOut,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AddShoppingCart,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                if (soldOut) "NOTHING LEFT" else "ADD TO BILL",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
+                } else if (!complete) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "Choose one from each row to see the price.",
+                        fontSize = 11.sp,
+                        color = TextMuted
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    "Every option is its own stockable line. Deep products such as rice + portion are created automatically from the product's variant rules.",
+                    "Every option keeps its own count, so selling one never takes stock from another.",
                     fontSize = 11.sp,
                     color = TextMuted
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionTile(
+    label: String,
+    priceText: String,
+    stockText: String,
+    selected: Boolean,
+    outOfStock: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val container = when {
+        outOfStock -> LightSurfaceVariant
+        selected -> BrandSurface
+        else -> LightSurface
+    }
+    val border = if (selected) BrandPrimary else LightBorder
+    val labelColor = if (outOfStock) TextMuted else TextPrimary
+    val priceColor = if (outOfStock) TextMuted else BrandPrimary
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        border = BorderStroke(width = if (selected) 2.dp else 1.dp, color = border),
+        modifier = modifier.then(
+            if (outOfStock) Modifier else Modifier.clickable(onClick = onClick)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selected) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Chosen",
+                        tint = BrandPrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Text(
+                    label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = labelColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (priceText.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    priceText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = priceColor
+                )
+            }
+            if (stockText.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    stockText,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (outOfStock) StatusRed else TextSecondary
                 )
             }
         }
@@ -1777,6 +1839,13 @@ fun CartItemRow(
                         color = if (item.isPriceChanged) StatusAmber else TextSecondary
                     )
                 }
+                // The unit travels with the line so "3 Kg" never becomes "3".
+                Text(
+                    "${CurrencyUtils.trimQuantity(item.quantity)} ${item.unit}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary
+                )
             }
 
             // Quantity stepper
@@ -3250,7 +3319,8 @@ fun SaleCompleteDialog(
                                     name = it.productName,
                                     quantity = it.quantity,
                                     unitPrice = it.unitPrice,
-                                    lineTotal = it.lineTotal
+                                    lineTotal = it.lineTotal,
+                                    unit = it.unit
                                 )
                             },
                             subtotal = sale.subtotal,

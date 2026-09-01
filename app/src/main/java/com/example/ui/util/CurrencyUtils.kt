@@ -111,8 +111,17 @@ object CurrencyUtils {
             // Full product name on its own line(s) - never truncated to
             // something the customer cannot recognise.
             wrapText(item.name, width).forEach { sb.appendLine(it) }
-            val qtyRate = "  " + trimNumber(item.quantity) + " x " + money(item.unitPrice)
-            sb.appendLine(padBetween(qtyRate, money(item.lineTotal), width))
+            val plainRate = "  " + trimNumber(item.quantity) + " x " + money(item.unitPrice)
+            // "2 Kg x 250.00" reads better than "2 x 250.00", but only when it
+            // still fits the paper — 58mm is 32 characters, no more.
+            val unitRate = if (item.unit.isBlank()) {
+                plainRate
+            } else {
+                "  " + trimNumber(item.quantity) + " " + item.unit + " x " + money(item.unitPrice)
+            }
+            val amount = money(item.lineTotal)
+            val qtyRate = if (unitRate.length + amount.length + 1 <= width) unitRate else plainRate
+            sb.appendLine(padBetween(qtyRate, amount, width))
         }
 
         // --- Totals ---
@@ -214,7 +223,14 @@ data class ReceiptItemData(
     val name: String,
     val quantity: Double,
     val unitPrice: Double,
-    val lineTotal: Double
+    val lineTotal: Double,
+    /**
+     * How the item is sold — "Kg", "Piece", "Bottle". Printed next to the
+     * quantity ("2 Kg x 250.00") so a customer can read the bill without
+     * asking. Left blank on older call sites, which then print exactly what
+     * they printed before.
+     */
+    val unit: String = ""
 )
 
 /** Reads the shop's saved bill-design choices off the business profile. */

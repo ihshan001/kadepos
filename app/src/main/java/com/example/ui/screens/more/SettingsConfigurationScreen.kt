@@ -521,8 +521,8 @@ fun SettingsConfigurationScreen(
                                 cashierName = "Nimal",
                                 customerName = "Walk-in",
                                 items = listOf(
-                                    ReceiptItemData("Sample item one", 2.0, 250.0, 500.0),
-                                    ReceiptItemData("Sample item two", 1.0, 180.0, 180.0)
+                                    ReceiptItemData("Sample item one", 2.0, 250.0, 500.0, "Kg"),
+                                    ReceiptItemData("Sample item two", 1.0, 180.0, 180.0, "Piece")
                                 ),
                                 subtotal = 680.0,
                                 discount = 30.0,
