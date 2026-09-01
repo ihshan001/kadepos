@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.ProductCatalogPresets
 import com.example.ui.components.ChoiceCard
+import com.example.ui.components.FocusRiser
 import com.example.ui.components.HintCard
 import com.example.ui.components.HintTone
 import com.example.ui.components.PhoneField
@@ -1014,6 +1015,7 @@ private fun SetupField(
     icon: ImageVector,
     error: String?,
     testTag: String,
+    scrollState: ScrollState? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true,
     isSecret: Boolean = false
@@ -1024,51 +1026,54 @@ private fun SetupField(
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(modifier = Modifier.height(6.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(testTag),
-            shape = RoundedCornerShape(14.dp),
-            textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium),
-            placeholder = { Text(placeholder, color = TextMuted, fontSize = 15.sp) },
-            leadingIcon = { Icon(icon, contentDescription = null, tint = BrandPrimary) },
-            trailingIcon = {
-                when {
-                    isSecret -> IconButton(onClick = { revealed = !revealed }) {
-                        Icon(
-                            imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (revealed) "Hide" else "Show",
-                            tint = TextSecondary
-                        )
+        FocusRiser(scrollState = scrollState) { focusModifier ->
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(focusModifier)
+                    .testTag(testTag),
+                shape = RoundedCornerShape(14.dp),
+                textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium),
+                placeholder = { Text(placeholder, color = TextMuted, fontSize = 15.sp) },
+                leadingIcon = { Icon(icon, contentDescription = null, tint = BrandPrimary) },
+                trailingIcon = {
+                    when {
+                        isSecret -> IconButton(onClick = { revealed = !revealed }) {
+                            Icon(
+                                imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (revealed) "Hide" else "Show",
+                                tint = TextSecondary
+                            )
+                        }
+                        error == null && value.isNotBlank() -> {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
+                        }
                     }
-                    error == null && value.isNotBlank() -> {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
-                    }
-                }
-            },
-            isError = error != null,
-            supportingText = if (error != null) {
-                { Text(error, color = StatusRed, fontSize = 12.sp) }
-            } else {
-                null
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            visualTransformation = if (isSecret && !revealed) {
-                PasswordVisualTransformation()
-            } else {
-                androidx.compose.ui.text.input.VisualTransformation.None
-            },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 2,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = BrandPrimary,
-                unfocusedBorderColor = LightBorder,
-                errorBorderColor = StatusRed,
-                cursorColor = BrandPrimary
+                },
+                isError = error != null,
+                supportingText = if (error != null) {
+                    { Text(error, color = StatusRed, fontSize = 12.sp) }
+                } else {
+                    null
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                visualTransformation = if (isSecret && !revealed) {
+                    PasswordVisualTransformation()
+                } else {
+                    androidx.compose.ui.text.input.VisualTransformation.None
+                },
+                singleLine = singleLine,
+                minLines = if (singleLine) 1 else 2,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BrandPrimary,
+                    unfocusedBorderColor = LightBorder,
+                    errorBorderColor = StatusRed,
+                    cursorColor = BrandPrimary
+                )
             )
-        )
+        }
     }
 }
 
