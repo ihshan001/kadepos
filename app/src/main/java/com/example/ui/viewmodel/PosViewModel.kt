@@ -562,10 +562,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * A quick confirmation ("Added Biriyani"). Shows for a short moment then
-     * fades; rapid consecutive adds restart the timer instead of stacking.
+     * A quick confirmation ("Added …"). Appears in the middle of the screen and
+     * clears after about a second, so it never sits in the way of the next tap;
+     * rapid consecutive adds restart the timer instead of stacking.
      */
-    fun showMessage(msg: String, durationMs: Long = 1400L) {
+    fun showMessage(msg: String, durationMs: Long = 1000L) {
         _messageImportant.value = false
         _userMessage.value = msg
         messageJob?.cancel()
@@ -983,7 +984,14 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         isTracked: Boolean,
         isFavourite: Boolean,
         subCategory: String = "",
-        variants: String = ""
+        variants: String = "",
+        /**
+         * Opening count per purchasable combination, keyed by
+         * [VariantCatalog.comboKey]. Comes straight from the combination table
+         * on the Add/Edit product screen, so "Green 40: 2" is stocked the
+         * moment the item is saved instead of starting every size at zero.
+         */
+        comboStock: Map<String, Double> = emptyMap()
     ) {
         if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
@@ -1019,7 +1027,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     repository.updateProduct(updated)
                     // Rewrite the child lines while keeping their stock history.
                     // Options removed from the parent are archived, not deleted.
-                    reconcileVariantChildren(id, updated, combos)
+                    reconcileVariantChildren(id, updated, combos, comboStock)
 
                     // Changing the stock figure here is a recount, so it goes
                     // through the ledger like any other correction rather than
@@ -1068,10 +1076,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                             variants = "",
                             parentProductId = parentId,
                             isVariant = true,
-                            // A variant starts at zero so it is stocked
-                            // separately; the parent's opening stock is not
-                            // silently shared across every size/option.
-                            currentStock = 0.0,
+                            // Stock is counted per combination, exactly as the
+                            // owner typed it in the combination table. The
+                            // parent's own opening stock is never silently
+                            // shared across every size or option.
+                            currentStock = comboStock[VariantCatalog.comboKey(combo.labels)] ?: 0.0,
                             updatedAt = System.currentTimeMillis()
                         )
                         repository.insertProductWithOpeningStock(child)
@@ -1093,7 +1102,8 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun reconcileVariantChildren(
         parentId: Long,
         parent: ProductEntity,
-        combos: List<com.example.data.model.VariantCombination>
+        combos: List<com.example.data.model.VariantCombination>,
+        comboStock: Map<String, Double> = emptyMap()
     ) {
         val existingChildren = repository.getVariantChildren(parentId)
         val desiredNames = combos.map { VariantCatalog.childName(parent.name, it) }.toSet()
@@ -1101,7 +1111,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         combos.forEach { combo ->
             val name = VariantCatalog.childName(parent.name, combo)
             val existing = existingChildren.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            val wantedStock = comboStock[VariantCatalog.comboKey(combo.labels)]
             if (existing != null) {
+                val counted = wantedStock ?: existing.currentStock
                 repository.updateProduct(
                     existing.copy(
                         name = name,
@@ -1112,9 +1124,20 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                         unit = parent.unit,
                         lowStockThreshold = parent.lowStockThreshold,
                         isTracked = parent.isTracked,
+                        currentStock = counted,
                         variants = ""
                     )
                 )
+                // A changed count is a recount, so it goes through the ledger
+                // like any other correction instead of overwriting the figure.
+                if (wantedStock != null && kotlin.math.abs(wantedStock - existing.currentStock) > 0.0001) {
+                    repository.recordStockAdjustment(
+                        productId = existing.id,
+                        newCount = wantedStock,
+                        reason = "COUNT",
+                        note = "Counted while editing the item"
+                    )
+                }
             } else {
                 val child = parent.copy(
                     id = 0L,
@@ -1123,7 +1146,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     variants = "",
                     parentProductId = parentId,
                     isVariant = true,
-                    currentStock = 0.0,
+                    currentStock = wantedStock ?: 0.0,
                     updatedAt = System.currentTimeMillis()
                 )
                 repository.insertProductWithOpeningStock(child)
@@ -2108,7 +2131,8 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshCloud() {
         val settings = cloudRepo.load()
         _cloudSettings.value = settings
-        if (!settings.providerEnabled) {
+        // The provider switch and the owner's own switch must both be on.
+        if (!settings.providerEnabled || !settings.ownerBackupEnabled) {
             CloudSyncScheduler.cancel(appContext)
             return
         }
@@ -2151,6 +2175,10 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         val settings = _cloudSettings.value
         if (!settings.providerEnabled) {
             showMessage("Ask your POS provider to activate cloud backup first")
+            return
+        }
+        if (!settings.ownerBackupEnabled) {
+            showMessage("Backup is switched off on this phone. Turn it on first.")
             return
         }
         if (settings.ownerGmail.isBlank()) {
@@ -2226,6 +2254,27 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
         }
         return true
+    }
+
+    /**
+     * The shop's own switch, under Cloud & Backup. The provider decides whether
+     * this device is allowed to back up; the owner decides whether it does.
+     */
+    fun setOwnerBackupEnabled(enabled: Boolean) {
+        val updated = cloudRepo.update { it.copy(ownerBackupEnabled = enabled) }
+        _cloudSettings.value = updated
+        if (updated.providerEnabled && updated.ownerBackupEnabled) {
+            if (updated.hourlySyncEnabled) CloudSyncScheduler.schedule(appContext)
+            if (updated.dailyBackupEnabled) CloudSyncScheduler.scheduleDailyBackup(appContext)
+        } else {
+            // Never cancel a manual sync that is already queued.
+            CloudSyncScheduler.cancelHourly(appContext)
+            CloudSyncScheduler.cancelDaily(appContext)
+        }
+        showMessage(if (enabled) "Backup switched on" else "Backup switched off on this phone")
+        viewModelScope.launch {
+            audit("SETTINGS", "Turned cloud backup ${if (enabled) "on" else "off"}", 0.0)
+        }
     }
 
     /** Unlocks the provider screen with the company access code + Gmail. */
