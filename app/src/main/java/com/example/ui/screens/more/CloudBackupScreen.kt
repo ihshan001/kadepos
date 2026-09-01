@@ -5,7 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
@@ -28,8 +29,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.example.data.cloud.CloudSettings
+import com.example.ui.components.AppTextField
+import com.example.ui.components.keyboardPadding
 import com.example.ui.theme.*
-import com.example.ui.util.CurrencyUtils
 import com.example.ui.viewmodel.PosViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -323,7 +325,14 @@ fun ProviderCloudScreen(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = LightSurface)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            // A dialog has its own window, so the content scrolls and keeps the
+            // focused field clear of the keyboard.
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(formScroll)
+                    .keyboardPadding()
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -343,15 +352,14 @@ fun ProviderCloudScreen(
                         shape = RoundedCornerShape(10.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    AppTextField(
                         value = code,
                         onValueChange = { code = it },
-                        label = { Text("Access code") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        label = "Access code",
+                        keyboardType = KeyboardType.NumberPassword,
+                        isSecret = true,
+                        scrollState = formScroll,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     if (error.isNotBlank()) {
                         Text(error, color = StatusRed, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
@@ -375,6 +383,7 @@ fun ProviderCloudScreen(
                     var hourly by remember { mutableStateOf(cloud.hourlySyncEnabled) }
                     var daily by remember { mutableStateOf(cloud.dailyBackupEnabled) }
                     var accessCode by remember { mutableStateOf("") }
+    val formScroll = rememberScrollState()
 
                     Text(
                         "This controls cloud backup and Google Drive sync. The owner can only connect an account and press Backup/Sync.",
@@ -403,15 +412,14 @@ fun ProviderCloudScreen(
                         shape = RoundedCornerShape(10.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    AppTextField(
                         value = accessCode,
                         onValueChange = { accessCode = it },
-                        label = { Text("Access code (required on first setup)") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        label = "Access code (required on first setup)",
+                        keyboardType = KeyboardType.NumberPassword,
+                        isSecret = true,
+                        scrollState = formScroll,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(

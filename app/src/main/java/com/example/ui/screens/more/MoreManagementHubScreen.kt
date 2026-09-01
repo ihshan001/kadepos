@@ -22,6 +22,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -1449,6 +1451,8 @@ private fun StaffEditorDialog(
     var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
     var role by remember { mutableStateOf(existing?.let { StaffRole.fromName(it.role) } ?: defaultRole) }
     var pin by remember { mutableStateOf("") }
+    // A PIN typed on a phone deserves to be checked before it is saved.
+    var pinRevealed by remember { mutableStateOf(false) }
     var active by remember { mutableStateOf(existing?.isActive ?: true) }
 
     val nameOk = name.trim().isNotBlank()
@@ -1537,6 +1541,20 @@ private fun StaffEditorDialog(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = if (pinRevealed) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { pinRevealed = !pinRevealed }) {
+                            Icon(
+                                imageVector = if (pinRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (pinRevealed) "Hide the PIN" else "Show the PIN",
+                                tint = TextSecondary
+                            )
+                        }
+                    },
                     supportingText = {
                         Text(
                             "They type this to sign in. Every bill records who sold it.",

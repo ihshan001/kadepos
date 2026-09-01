@@ -44,7 +44,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.example.ui.util.ReceiptDesign
 import com.example.ui.util.ReceiptItemData
+import com.example.ui.components.PhoneField
+import com.example.ui.util.CountryCodes
 import com.example.ui.util.CurrencyUtils
+import com.example.ui.util.PhoneValidator
 import com.example.ui.viewmodel.PosViewModel
 
 /** A ready-to-fill CSV so the owner can prepare a catalogue on a computer. */
@@ -86,8 +89,12 @@ fun SettingsConfigurationScreen(
     // Form state initialized from profile
     var name by remember(profile) { mutableStateOf(profile?.name.orEmpty()) }
     var businessType by remember(profile) { mutableStateOf(profile?.businessType ?: "Retail") }
-    var phone by remember(profile) { mutableStateOf(profile?.phone ?: "+94 77 123 4567") }
-    var address by remember(profile) { mutableStateOf(profile?.address ?: "123 Galle Road, Colombo") }
+    // The shop number is stored whole ("+94 777777700"); the editor splits it
+    // back into a country and a local part so the same rules as setup apply.
+    val savedPhone = remember(profile?.phone) { CountryCodes.split(profile?.phone.orEmpty()) }
+    var phoneCountry by remember(profile?.phone) { mutableStateOf(savedPhone.first) }
+    var phoneLocal by remember(profile?.phone) { mutableStateOf(savedPhone.second) }
+    var address by remember(profile) { mutableStateOf(profile?.address ?: "24 Market Street") }
     var currencySymbol by remember(profile) { mutableStateOf(profile?.currencySymbol ?: "Rs.") }
     var taxRate by remember { mutableStateOf("0.0") }
     var taxInclusive by remember { mutableStateOf(true) }
@@ -105,6 +112,9 @@ fun SettingsConfigurationScreen(
     var receiptShowItemCount by remember(profile) { mutableStateOf(profile?.receiptShowItemCount ?: true) }
     var receiptReturnNote by remember(profile) { mutableStateOf(profile?.receiptReturnNote.orEmpty()) }
     var printerName by remember(profile) { mutableStateOf(profile?.printerName.orEmpty()) }
+
+    /** The number as it is stored and printed on every bill. */
+    val fullPhone = CountryCodes.join(phoneCountry, phoneLocal)
 
     // Real catalogue rows drive the receipt preview.
     val allProducts by viewModel.products.collectAsState()
@@ -204,7 +214,7 @@ fun SettingsConfigurationScreen(
                                 current.copy(
                                     name = name.trim(),
                                     businessType = businessType,
-                                    phone = phone.trim(),
+                                    phone = fullPhone,
                                     address = address.trim(),
                                     currencySymbol = currencySymbol,
                                     receiptFooter = receiptFooter.trim(),
@@ -337,14 +347,14 @@ fun SettingsConfigurationScreen(
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = phone,
-                            onValueChange = { phone = it },
-                            label = { Text("Phone Number (Sri Lanka default)") },
-                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandPrimary) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
+                        PhoneField(
+                            country = phoneCountry,
+                            localNumber = phoneLocal,
+                            onCountryChange = { phoneCountry = it },
+                            onNumberChange = { phoneLocal = it },
+                            error = PhoneValidator.errorFor(phoneCountry, phoneLocal),
+                            label = "Phone number",
+                            placeholder = "777777700"
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -514,7 +524,7 @@ fun SettingsConfigurationScreen(
                         ) {
                             CurrencyUtils.buildReceiptText(
                                 businessName = name,
-                                businessPhone = phone,
+                                businessPhone = fullPhone,
                                 businessAddress = address,
                                 invoiceNumber = "INV-000123",
                                 timestamp = System.currentTimeMillis(),
@@ -898,7 +908,7 @@ fun SettingsConfigurationScreen(
                             current.copy(
                                 name = name.trim(),
                                 businessType = businessType,
-                                phone = phone.trim(),
+                                phone = fullPhone,
                                 address = address.trim(),
                                 currencySymbol = currencySymbol,
                                 receiptFooter = receiptFooter.trim(),
@@ -981,7 +991,7 @@ fun SettingsConfigurationScreen(
                         ) {
                             Text(name.uppercase(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ReceiptText)
                             Text(address, fontSize = 10.sp, color = ReceiptText)
-                            Text(phone, fontSize = 10.sp, color = ReceiptText)
+                            Text(fullPhone, fontSize = 10.sp, color = ReceiptText)
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             // Preview uses this shop's real items, so what you
                             // see is what the printer will actually produce.
