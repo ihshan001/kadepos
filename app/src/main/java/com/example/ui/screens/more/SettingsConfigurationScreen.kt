@@ -49,6 +49,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.example.ui.util.ReceiptDesign
 import com.example.ui.util.ReceiptItemData
+import com.example.ui.components.AppTextField
 import com.example.ui.components.PhoneField
 import com.example.ui.util.CountryCodes
 import com.example.ui.util.CurrencyUtils
