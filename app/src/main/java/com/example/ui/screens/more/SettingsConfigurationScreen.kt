@@ -180,7 +180,7 @@ fun SettingsConfigurationScreen(
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         out.write(csv.toByteArray(Charsets.UTF_8))
                     }
-                }.onFailure { viewModel.showMessage("Could not write the CSV file") }
+                }.onFailure { viewModel.showMessage("Could not save the list") }
             }
         }
     }
@@ -192,7 +192,7 @@ fun SettingsConfigurationScreen(
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(PRODUCT_CSV_TEMPLATE.toByteArray(Charsets.UTF_8))
                 }
-            }.onFailure { viewModel.showMessage("Could not write the CSV template") }
+            }.onFailure { viewModel.showMessage("Could not save the empty list") }
         }
     }
     val importLauncher = rememberLauncherForActivityResult(
@@ -898,7 +898,7 @@ fun SettingsConfigurationScreen(
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Products CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Save list", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             OutlinedButton(
                                 onClick = { importLauncher.launch("text/csv") },
@@ -907,13 +907,14 @@ fun SettingsConfigurationScreen(
                             ) {
                                 Icon(Icons.Default.Upload, contentDescription = null, Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Import CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Load list", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "CSV columns: name, sellingPrice, costPrice, barcode, sku, category, subCategory, unit, currentStock, lowStockThreshold, tracked, favourite, variants. Tap Template for a ready-to-fill file, export your current list, or import one from your computer.",
+                            "Tap Template for a ready-to-fill file, Save list to keep a copy of " +
+                                "your items, or Load list to bring one back in.",
                             fontSize = 10.sp,
                             color = TextSecondary
                         )

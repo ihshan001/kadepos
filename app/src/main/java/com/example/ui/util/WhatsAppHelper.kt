@@ -82,7 +82,7 @@ object WhatsAppHelper {
             appendLine("📅 Date: $today")
             appendLine("--------------------------------")
             appendLine("📦 *Item:* ${product.name}")
-            if (product.barcode.isNotBlank()) appendLine("🏷 *Barcode/SKU:* ${product.barcode}")
+            if (product.barcode.isNotBlank()) appendLine("🏷 *Barcode:* ${product.barcode}")
             if (product.category.isNotBlank() && product.category != "General") appendLine("📁 *Category:* ${product.category}")
             appendLine("📊 *Current Stock:* $currStockStr ${product.unit} (Low Threshold: $thresholdStr)")
             appendLine("⚡ *Requested Order Qty:* *$qtyStr ${product.unit}*")

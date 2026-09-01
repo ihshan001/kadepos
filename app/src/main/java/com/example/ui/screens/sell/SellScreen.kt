@@ -361,7 +361,7 @@ fun SellScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("search_product_input"),
-                        placeholder = { Text("Search products, SKU, barcode...", fontSize = 13.sp) },
+                        placeholder = { Text("Search by name or barcode", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp)) },
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically) {

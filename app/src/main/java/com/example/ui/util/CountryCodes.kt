@@ -260,10 +260,37 @@ object CountryCodes {
     /** The country a new shop starts on. */
     val default: Country = all.first { it.code == "LK" }
 
+    /**
+     * Which country a shared dial code means.
+     *
+     * A few codes cover several countries — +44 is the United Kingdom but also
+     * Guernsey, Jersey and the Isle of Man. Picking the first match in the
+     * alphabet would quietly turn a British number into a Guernsey one, so the
+     * country everyone means by each shared code is named here.
+     */
+    private val primaryForDialCode: Map<String, String> = mapOf(
+        "+1" to "US",
+        "+7" to "RU",
+        "+39" to "IT",
+        "+44" to "GB",
+        "+47" to "NO",
+        "+61" to "AU",
+        "+64" to "NZ",
+        "+212" to "MA",
+        "+262" to "RE"
+    )
+
+    /** Of several countries sharing a code, the one everybody means. */
+    private fun preferred(candidates: List<Country>): Country? {
+        if (candidates.isEmpty()) return null
+        val primary = primaryForDialCode[candidates.first().dialCode]
+        return candidates.firstOrNull { it.code == primary } ?: candidates.first()
+    }
+
     fun findByDialCode(dialCode: String): Country? {
         val wanted = dialCode.trim().removePrefix("+")
         if (wanted.isBlank()) return null
-        return all.firstOrNull { it.dialCode.removePrefix("+") == wanted }
+        return preferred(all.filter { it.dialCode.removePrefix("+") == wanted })
     }
 
     fun findByCode(code: String): Country? =
@@ -281,9 +308,10 @@ object CountryCodes {
         if (raw.startsWith("+")) {
             val digits = raw.substring(1).filter { it.isDigit() }
             // Longest dial code first, so +1 never wins over +1242.
-            val match = all
+            val matches = all
                 .sortedByDescending { it.dialCode.removePrefix("+").length }
-                .firstOrNull { digits.startsWith(it.dialCode.removePrefix("+")) }
+                .filter { digits.startsWith(it.dialCode.removePrefix("+")) }
+            val match = preferred(matches)
             if (match != null) {
                 return match to digits.substring(match.dialCode.removePrefix("+").length)
             }

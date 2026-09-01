@@ -73,6 +73,9 @@ object VariantCatalog {
      */
     const val COMBO_PREFIX = '='
 
+    /** How many combinations a one-line card summary spells out before "+N more". */
+    private const val SUMMARY_LIMIT = 8
+
     /** Stable, case-insensitive key for one combination's labels. */
     fun comboKey(labels: List<String>): String =
         labels.joinToString("/").trim().lowercase()
@@ -213,8 +216,22 @@ object VariantCatalog {
         }
     }
 
-    /** A short one-line summary for product cards and pickers. */
+    /**
+     * A short one-line summary for product cards and pickers.
+     *
+     * When the field carries exact combination lines the summary lists those
+     * combinations, because that is the only honest answer once each first
+     * choice can carry its own second choices: a plain "Size: 32 / 34 / L / XL"
+     * would claim a Green size L that the shop does not sell.
+     */
     fun summary(raw: String): String {
+        val defined = parseDefinedCombos(raw)
+        if (defined.isNotEmpty()) {
+            val names = defined.map { (labels, _) -> labels.joinToString("/") }
+            val shown = names.take(SUMMARY_LIMIT)
+            val rest = names.size - shown.size
+            return shown.joinToString(" / ") + if (rest > 0) " +$rest more" else ""
+        }
         val groups = parseGroups(raw)
         if (groups.isNotEmpty()) {
             return groups.joinToString(" · ") { g -> "${g.name}: ${g.options.joinToString(" / ")}" }

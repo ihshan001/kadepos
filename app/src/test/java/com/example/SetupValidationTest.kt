@@ -151,7 +151,7 @@ class SetupValidationTest {
       setOf(Permission.REFUND_SALE)
     )
     val person = PermissionSet.resolve(
-      role = StaffRole.MANAGER, staffId = 2L, staffName = "Kamal",
+      role = StaffRole.MANAGER, staffId = 2L, staffName = "Rowan",
       extraCsv = extra, revokedCsv = revoked
     )
     assertFalse("revoke must win so 'block this' is dependable", person.can(Permission.REFUND_SALE))
@@ -161,7 +161,7 @@ class SetupValidationTest {
   fun `a revoked role default is actually removed`() {
     val (extra, revoked) = PermissionOverrides.encode(emptySet(), setOf(Permission.VIEW_PROFIT))
     val manager = PermissionSet.resolve(
-      role = StaffRole.MANAGER, staffId = 3L, staffName = "Sunil",
+      role = StaffRole.MANAGER, staffId = 3L, staffName = "Blake",
       extraCsv = extra, revokedCsv = revoked
     )
     assertFalse(manager.can(Permission.VIEW_PROFIT))

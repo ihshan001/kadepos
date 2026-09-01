@@ -139,6 +139,20 @@ class ProductOptionsTest {
     }
 
     @Test
+    fun `a card summary lists the combinations the shop really sells`() {
+        // A flat union would claim a Green size L, which nobody stocks.
+        assertEquals(
+            "Green/32 / Green/34 / Green/36 / Green/40 / Black/L / Black/XL",
+            VariantCatalog.summary(ProductOptions.encode(trouser()))
+        )
+        // Products saved before the editor existed keep the old wording.
+        assertEquals(
+            "Rice: Keeri / Basmati · Portion: Regular / Full",
+            VariantCatalog.summary("Rice: Keeri|Basmati\nPortion: Regular|Full\nFull+200")
+        )
+    }
+
+    @Test
     fun `products saved before exact combinations still work`() {
         // The old format: group lines plus a delta for one option.
         val legacy = "Rice: Keeri|Basmati\nPortion: Regular|Full\nFull+200"
@@ -183,6 +197,19 @@ class ProductOptionsTest {
         assertNull(PhoneValidator.errorFor(uk, "7700900123"))
         assertNotNull(PhoneValidator.errorFor(uk, "07700900123"))
         assertNotNull(PhoneValidator.errorFor(uk, "7"))
+    }
+
+    @Test
+    fun `a shared dial code belongs to the country everybody means`() {
+        // +44 covers Guernsey and Jersey too, but a British shop means Britain.
+        assertEquals("GB", CountryCodes.findByDialCode("+44")!!.code)
+        assertEquals("US", CountryCodes.findByDialCode("+1")!!.code)
+        // A longer code still wins over the code it sits inside.
+        assertEquals("BS", CountryCodes.findByDialCode("+1242")!!.code)
+
+        val (country, local) = CountryCodes.split("+44 7700900123")
+        assertEquals("GB", country.code)
+        assertEquals("7700900123", local)
     }
 
     @Test

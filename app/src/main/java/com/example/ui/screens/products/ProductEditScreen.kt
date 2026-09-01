@@ -1276,7 +1276,7 @@ private fun NormalMode(
                 AppTextField(
                     value = form.sku,
                     onValueChange = { onChange(form.copy(sku = it)) },
-                    label = "SKU / shop code",
+                    label = "Shop code (optional)",
                     placeholder = "Optional",
                     scrollState = scrollState,
                     singleLine = true
