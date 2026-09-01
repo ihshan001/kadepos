@@ -173,8 +173,8 @@ fun InventoryScreen(viewModel: PosViewModel) {
                         val selected = filter == option
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = if (selected) BrandGoldPrimary else LightSurface,
-                            border = BorderStroke(1.dp, if (selected) BrandGoldPrimary else LightBorder),
+                            color = if (selected) BrandPrimary else LightSurface,
+                            border = BorderStroke(1.dp, if (selected) BrandPrimary else LightBorder),
                             modifier = Modifier
                                 .clickable { filter = option }
                                 .testTag("stock_filter_${option.name}")
@@ -187,7 +187,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                                 },
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (selected) BrandOnGold else TextSecondary,
+                                color = if (selected) BrandOnPrimary else TextSecondary,
                                 maxLines = 1,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
                             )
@@ -245,7 +245,7 @@ fun InventoryScreen(viewModel: PosViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = LightSurface,
                             unfocusedContainerColor = LightSurface,
-                            focusedBorderColor = BrandGoldPrimary
+                            focusedBorderColor = BrandPrimary
                         )
                     )
                 }
@@ -372,7 +372,7 @@ private fun StockRow(
                 Button(
                     onClick = onReceive,
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     contentPadding = PaddingValues(vertical = 8.dp),
                     modifier = Modifier
                         .weight(1f)
@@ -442,14 +442,14 @@ private fun ReceiveStockSheet(
                 listOf(6, 12, 24, 50).forEach { preset ->
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = BrandGoldSurface,
+                        color = BrandSurface,
                         modifier = Modifier.clickable { qty = preset }
                     ) {
                         Text(
                             "+$preset",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGoldPrimary,
+                            color = BrandPrimary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
@@ -466,21 +466,21 @@ private fun ReceiveStockSheet(
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
             )
 
             if (qty > 0) {
                 Spacer(modifier = Modifier.height(14.dp))
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = BrandGoldSurface,
+                    color = BrandSurface,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "You will have ${(product.currentStock + qty).clean()} ${product.unit}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BrandGoldPrimary,
+                        color = BrandPrimary,
                         modifier = Modifier.padding(14.dp)
                     )
                 }
@@ -492,7 +492,7 @@ private fun ReceiveStockSheet(
                 onClick = { onConfirm(qty.toDouble(), costText.toDoubleOrNull() ?: product.costPrice) },
                 enabled = qty > 0,
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
@@ -560,7 +560,7 @@ private fun RecountSheet(
             Button(
                 onClick = { onConfirm(actual.toDouble()) },
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
@@ -596,9 +596,9 @@ private fun Stepper(value: Int, onChange: (Int) -> Unit, testTag: String) {
         FilledTonalIconButton(
             onClick = { onChange(value + 1) },
             modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandGoldSurface)
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandSurface)
         ) {
-            Icon(Icons.Default.Add, contentDescription = "More", tint = BrandGoldPrimary)
+            Icon(Icons.Default.Add, contentDescription = "More", tint = BrandPrimary)
         }
     }
 }

@@ -194,13 +194,13 @@ private fun WelcomeStep(onStart: () -> Unit) {
                 modifier = Modifier
                     .size(88.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(BrandGoldPrimary),
+                    .background(BrandPrimary),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.ReceiptLong,
                     contentDescription = null,
-                    tint = BrandOnGold,
+                    tint = BrandOnPrimary,
                     modifier = Modifier.size(46.dp)
                 )
             }
@@ -217,7 +217,7 @@ private fun WelcomeStep(onStart: () -> Unit) {
                 "Open. Sell. Done.",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = BrandGoldPrimary,
+                color = BrandPrimary,
                 modifier = Modifier.padding(top = 4.dp)
             )
 
@@ -273,10 +273,10 @@ private fun WelcomePoint(icon: ImageVector, title: String, detail: String) {
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(BrandGoldSurface),
+                .background(BrandSurface),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(20.dp))
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column {
@@ -401,9 +401,9 @@ private fun ShopTypeStep(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (draft.loadStarterItems) BrandGoldSurface else LightSurface
+                    containerColor = if (draft.loadStarterItems) BrandSurface else LightSurface
                 ),
-                border = BorderStroke(1.dp, if (draft.loadStarterItems) BrandGoldPrimary else LightBorder),
+                border = BorderStroke(1.dp, if (draft.loadStarterItems) BrandPrimary else LightBorder),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onChange(draft.copy(loadStarterItems = !draft.loadStarterItems)) }
@@ -412,7 +412,7 @@ private fun ShopTypeStep(
                     Checkbox(
                         checked = draft.loadStarterItems,
                         onCheckedChange = { onChange(draft.copy(loadStarterItems = it)) },
-                        colors = CheckboxDefaults.colors(checkedColor = BrandGoldPrimary)
+                        colors = CheckboxDefaults.colors(checkedColor = BrandPrimary)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Column {
@@ -682,11 +682,11 @@ private fun PrinterStep(
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (draft.paperWidth == width) BrandGoldSurface else LightSurface
+                            containerColor = if (draft.paperWidth == width) BrandSurface else LightSurface
                         ),
                         border = BorderStroke(
                             if (draft.paperWidth == width) 2.dp else 1.dp,
-                            if (draft.paperWidth == width) BrandGoldPrimary else LightBorder
+                            if (draft.paperWidth == width) BrandPrimary else LightBorder
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -845,7 +845,7 @@ private fun SummaryLine(
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.width(12.dp))
         Text(label, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
         Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -951,7 +951,7 @@ private fun StepTopBar(step: Int, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp),
-            color = BrandGoldPrimary,
+            color = BrandPrimary,
             trackColor = LightBorder,
             gapSize = 0.dp,
             drawStopIndicator = {}
@@ -998,7 +998,7 @@ private fun SetupField(
             shape = RoundedCornerShape(14.dp),
             textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium),
             placeholder = { Text(placeholder, color = TextMuted, fontSize = 15.sp) },
-            leadingIcon = { Icon(icon, contentDescription = null, tint = BrandGoldPrimary) },
+            leadingIcon = { Icon(icon, contentDescription = null, tint = BrandPrimary) },
             trailingIcon = {
                 if (error == null && value.isNotBlank()) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
@@ -1015,10 +1015,10 @@ private fun SetupField(
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 2,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = BrandGoldPrimary,
+                focusedBorderColor = BrandPrimary,
                 unfocusedBorderColor = LightBorder,
                 errorBorderColor = StatusRed,
-                cursorColor = BrandGoldPrimary
+                cursorColor = BrandPrimary
             )
         )
     }

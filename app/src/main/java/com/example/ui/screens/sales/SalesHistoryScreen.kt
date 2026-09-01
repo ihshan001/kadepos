@@ -153,7 +153,7 @@ fun SalesHistoryScreen(
             // 1. KPI Summary Cards Grid
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                colors = CardDefaults.cardColors(containerColor = BrandSurface),
                 border = CardDefaults.outlinedCardBorder(),
                 modifier = Modifier.fillMaxWidth().testTag("sales_history_kpi_card")
             ) {
@@ -174,22 +174,22 @@ fun SalesHistoryScreen(
                                 },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandGoldDark
+                                color = BrandPrimaryDark
                             )
                             Text(
                                 CurrencyUtils.formatLkr(totalRevenue),
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandGoldPrimary
+                                color = BrandPrimary
                             )
                         }
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = BrandGoldPrimary
+                            color = BrandPrimary
                         ) {
                             Text(
                                 text = "${validSales.size} Orders",
-                                color = BrandOnGold,
+                                color = BrandOnPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -198,7 +198,7 @@ fun SalesHistoryScreen(
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = BrandGoldPrimary.copy(alpha = 0.15f))
+                    HorizontalDivider(color = BrandPrimary.copy(alpha = 0.15f))
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
@@ -224,7 +224,7 @@ fun SalesHistoryScreen(
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("Avg. Bill", fontSize = 10.sp, color = TextSecondary)
-                            Text(CurrencyUtils.formatLkr(avgTicket), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandGoldDark)
+                            Text(CurrencyUtils.formatLkr(avgTicket), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandPrimaryDark)
                         }
                     }
                 }
@@ -253,7 +253,7 @@ fun SalesHistoryScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextPrimary,
                     unfocusedTextColor = TextPrimary,
-                    focusedBorderColor = BrandGoldPrimary,
+                    focusedBorderColor = BrandPrimary,
                     unfocusedBorderColor = LightBorder,
                     focusedContainerColor = LightSurface,
                     unfocusedContainerColor = LightSurface
@@ -278,7 +278,7 @@ fun SalesHistoryScreen(
                     val isSelected = selectedPeriod == key
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (isSelected) BrandGoldPrimary else LightSurface,
+                        color = if (isSelected) BrandPrimary else LightSurface,
                         border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
                         modifier = Modifier.clickable { selectedPeriod = key }
                     ) {
@@ -286,7 +286,7 @@ fun SalesHistoryScreen(
                             text = label,
                             fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) BrandOnGold else TextPrimary,
+                            color = if (isSelected) BrandOnPrimary else TextPrimary,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -314,7 +314,7 @@ fun SalesHistoryScreen(
                     val tint = if (isSelected) Color.White else TextSecondary
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (isSelected) BrandGoldDark else LightSurfaceVariant,
+                        color = if (isSelected) BrandPrimaryDark else LightSurfaceVariant,
                         border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
                         modifier = Modifier.clickable { selectedPaymentFilter = key }
                     ) {
@@ -470,7 +470,7 @@ fun SaleHistoryCard(
                             when {
                                 isRefunded -> StatusRedBg
                                 sale.paymentMethod == "CASH" -> StatusGreenBg
-                                sale.paymentMethod == "CARD" -> BrandGoldSurface
+                                sale.paymentMethod == "CARD" -> BrandSurface
                                 else -> StatusAmberBg
                             }
                         ),
@@ -487,7 +487,7 @@ fun SaleHistoryCard(
                         tint = when {
                             isRefunded -> StatusRed
                             sale.paymentMethod == "CASH" -> StatusGreen
-                            sale.paymentMethod == "CARD" -> BrandGoldPrimary
+                            sale.paymentMethod == "CARD" -> BrandPrimary
                             else -> StatusAmber
                         },
                         modifier = Modifier.size(20.dp)
@@ -510,13 +510,13 @@ fun SaleHistoryCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = BrandGoldSurface
+                                color = BrandSurface
                             ) {
                                 Text(
                                     "-${CurrencyUtils.formatLkr(sale.discountAmount)}",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = BrandGoldPrimary,
+                                    color = BrandPrimary,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
                             }
@@ -542,7 +542,7 @@ fun SaleHistoryCard(
                     text = CurrencyUtils.formatLkr(sale.totalAmount),
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 14.sp,
-                    color = if (isRefunded) StatusRed else BrandGoldPrimary
+                    color = if (isRefunded) StatusRed else BrandPrimary
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Surface(
@@ -574,7 +574,7 @@ fun SaleHistoryCard(
 fun PaymentBadge(method: String) {
     val (bg, fg) = when (method) {
         "CASH" -> StatusGreenBg to StatusGreen
-        "CARD" -> BrandGoldSurface to BrandGoldPrimary
+        "CARD" -> BrandSurface to BrandPrimary
         "CREDIT" -> StatusAmberBg to StatusAmber
         else -> LightSurfaceVariant to TextSecondary
     }

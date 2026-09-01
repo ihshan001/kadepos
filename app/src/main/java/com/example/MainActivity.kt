@@ -23,9 +23,33 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import com.example.ui.theme.BrandOnPrimary
+import com.example.ui.theme.BrandPrimary
+import com.example.ui.theme.BrandSurface
+import com.example.ui.theme.BrandPrimaryDark
+import com.example.ui.theme.StatusAmber
+import com.example.ui.theme.StatusAmberBg
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +60,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.BusinessProfileEntity
 import com.example.data.model.Permission
@@ -46,8 +71,6 @@ import com.example.ui.screens.onboarding.OnboardingFlow
 import com.example.ui.screens.products.ProductsScreen
 import com.example.ui.screens.sales.SalesHistoryScreen
 import com.example.ui.screens.sell.SellScreen
-import com.example.ui.theme.BrandGoldSurface
-import com.example.ui.theme.BrandGoldPrimary
 import com.example.ui.theme.ArroPosTheme
 import com.example.ui.theme.LightBackground
 import com.example.ui.theme.LightSurface
@@ -96,19 +119,11 @@ fun ArroPosApp(viewModel: PosViewModel) {
     val moreDestination by viewModel.moreDestination.collectAsStateWithLifecycle()
     val onboardingStep by viewModel.onboardingStep.collectAsStateWithLifecycle()
     val userMessage by viewModel.userMessage.collectAsStateWithLifecycle()
+    val messageImportant by viewModel.messageImportant.collectAsStateWithLifecycle()
     val lowStockProducts by viewModel.lowStockProducts.collectAsStateWithLifecycle()
     val staffList by viewModel.staffList.collectAsStateWithLifecycle()
     val requiresSignIn by viewModel.requiresSignIn.collectAsStateWithLifecycle()
     val permissions by viewModel.permissions.collectAsStateWithLifecycle()
-
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(userMessage) {
-        userMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearMessage()
-        }
-    }
 
     // ---- Setup wizard ----------------------------------------------------
     val needsSetup = profile != null && profile?.isConfigured == false
@@ -189,21 +204,20 @@ fun ArroPosApp(viewModel: PosViewModel) {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = LightBackground,
         bottomBar = {
             NavigationBar(
                 containerColor = LightSurface,
-                contentColor = BrandGoldPrimary,
+                contentColor = BrandPrimary,
                 tonalElevation = 8.dp
             ) {
                 val colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = BrandGoldPrimary,
-                    selectedTextColor = BrandGoldPrimary,
+                    selectedIconColor = BrandPrimary,
+                    selectedTextColor = BrandPrimary,
                     unselectedIconColor = TextSecondary,
                     unselectedTextColor = TextSecondary,
-                    indicatorColor = BrandGoldSurface
+                    indicatorColor = BrandSurface
                 )
                 navEntries.forEach { entry ->
                     NavigationBarItem(
@@ -262,6 +276,53 @@ fun ArroPosApp(viewModel: PosViewModel) {
                     onSelectDestination = { viewModel.navigateMore(it) },
                     onBackToHub = { viewModel.clearMoreDestination() }
                 )
+            }
+
+            // Transient confirmation banner pinned to the TOP so it never sits
+            // on the Charge bar. It fades on its own; errors are tap-to-dismiss.
+            AnimatedVisibility(
+                visible = userMessage != null,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically { -it / 2 },
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (messageImportant) StatusAmberBg else BrandSurface,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp)
+                        .clickable { viewModel.clearMessage() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            if (messageImportant) Icons.Default.Warning else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (messageImportant) StatusAmber else BrandPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            userMessage.orEmpty(),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (messageImportant) StatusAmber else BrandPrimaryDark,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (messageImportant) {
+                            IconButton(
+                                onClick = { viewModel.clearMessage() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = StatusAmber, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -29,6 +29,23 @@ data class VariantCombination(
     val price: Double
 )
 
+/**
+ * A single choice inside an option group while the owner is editing it on the
+ * Add/Edit product screen. [priceAdjustment] is how much this choice adds to
+ * (or subtracts from) the base selling price, so "Basmati +400" prices every
+ * Basmati combination 400 higher without typing each combination by hand.
+ */
+data class VariantOptionDraft(
+    val name: String,
+    val priceAdjustment: Double = 0.0
+)
+
+/** A named group of mutually-exclusive choices, e.g. "Rice type: Keeri/Basmati". */
+data class VariantGroupDraft(
+    val name: String,
+    val options: List<VariantOptionDraft>
+)
+
 object VariantCatalog {
 
     /** Parses the group lines: `Rice: Basmati|Keeri`. */
@@ -135,6 +152,99 @@ object VariantCatalog {
         }
         return lines(raw).joinToString(" · ") { line -> line.split("|")[0].trim().ifBlank { line } }
     }
+
+    // ------------------------------------------------------------------
+    // Structured editor round-trip (Add/Edit product screen)
+    // ------------------------------------------------------------------
+
+    /**
+     * Reads a stored variants string back into the editable groups the
+     * Add/Edit product screen shows. Handles both the deep "Group: a|b"
+     * format and the legacy one-line "Name|price" format (which becomes a
+     * single implicit group named "Option").
+     */
+    fun parseDrafts(raw: String, basePrice: Double): List<VariantGroupDraft> {
+        val groups = parseGroups(raw)
+        if (groups.isNotEmpty()) {
+            val deltas = parseDeltas(raw, groups)
+            val overrides = parseOverridePrices(raw)
+            return groups.map { group ->
+                VariantGroupDraft(
+                    name = group.name,
+                    options = group.options.map { option ->
+                        val fromDelta = deltas[option.lowercase()]
+                        val fromOverride = overrides
+                            .firstOrNull { it.first.size == 1 && it.first[0].equals(option, true) }
+                            ?.let { it.second - basePrice }
+                        VariantOptionDraft(option, fromDelta ?: fromOverride ?: 0.0)
+                    }
+                )
+            }
+        }
+
+        // Legacy simple format: "Name" or "Name|price" per line.
+        val simple = lines(raw).mapNotNull { line ->
+            val parts = line.split("|").map { it.trim() }
+            val name = parts.getOrNull(0).orEmpty()
+            if (name.isBlank()) null else name to (parts.getOrNull(1)?.toDoubleOrNull() ?: basePrice)
+        }.distinctBy { it.first }
+        if (simple.isEmpty()) return emptyList()
+        return listOf(
+            VariantGroupDraft(
+                name = "Option",
+                options = simple.map { (name, price) ->
+                    VariantOptionDraft(name, price - basePrice)
+                }
+            )
+        )
+    }
+
+    /**
+     * Writes the editor state back into the stored string format the rest of
+     * the app (and the stockable child-line generator) already understands:
+     * one "Group: a|b" line per group plus one "Name+delta" line for every
+     * choice whose price differs from the base. Blank groups are dropped.
+     */
+    fun encodeDrafts(groups: List<VariantGroupDraft>): String {
+        val clean = groups
+            .map { group ->
+                VariantGroupDraft(
+                    name = cleanName(group.name),
+                    options = group.options
+                        .mapNotNull { opt ->
+                            val name = cleanName(opt.name)
+                            if (name.isBlank()) null else VariantOptionDraft(name, opt.priceAdjustment)
+                        }
+                        .distinctBy { it.name.lowercase() }
+                )
+            }
+            .filter { it.name.isNotBlank() && it.options.isNotEmpty() }
+
+        val sb = StringBuilder()
+        clean.forEach { group ->
+            sb.append(group.name).append(": ")
+                .append(group.options.joinToString("|") { it.name })
+                .append('\n')
+        }
+        clean.forEach { group ->
+            group.options.forEach { option ->
+                if (option.priceAdjustment != 0.0) {
+                    sb.append(option.name)
+                        .append(if (option.priceAdjustment > 0) "+" else "")
+                        .append(formatPrice(option.priceAdjustment))
+                        .append('\n')
+                }
+            }
+        }
+        return sb.toString().trimEnd('\n')
+    }
+
+    /** Strips the characters the variants grammar uses as separators. */
+    private fun cleanName(name: String): String =
+        name.replace(Regex("""[|/:;\n\r]"""), " ").replace(Regex("""\s+"""), " ").trim()
+
+    private fun formatPrice(value: Double): String =
+        if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
     private fun cartesian(groups: List<List<Pair<String, String>>>): List<List<Pair<String, String>>> {
         if (groups.isEmpty()) return emptyList()

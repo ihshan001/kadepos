@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -274,7 +275,7 @@ fun SellScreen(
                     // Today's Sales Pill (Compact, opens full breakdown)
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = BrandGoldSurface,
+                        color = BrandSurface,
                         border = CardDefaults.outlinedCardBorder(),
                         modifier = Modifier
                             .padding(end = 4.dp)
@@ -285,13 +286,13 @@ fun SellScreen(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Assessment, contentDescription = "Today Sales", tint = BrandGoldPrimary, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Assessment, contentDescription = "Today Sales", tint = BrandPrimary, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 CurrencyUtils.formatLkr(todayTotalSales),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandGoldPrimary
+                                color = BrandPrimary
                             )
                         }
                     }
@@ -327,7 +328,7 @@ fun SellScreen(
                         onClick = { quickPrefillName = ""; quickPrefillBarcode = null; showQuickSaleDialog = true },
                         modifier = Modifier.testTag("quick_sale_icon_button")
                     ) {
-                        Icon(Icons.Default.FlashOn, contentDescription = "Quick Add", tint = BrandGoldPrimary)
+                        Icon(Icons.Default.FlashOn, contentDescription = "Quick Add", tint = BrandPrimary)
                     }
 
                     IconButton(
@@ -376,7 +377,7 @@ fun SellScreen(
                                     onClick = { showBarcodeDialog = true },
                                     modifier = Modifier.testTag("barcode_scanner_button")
                                 ) {
-                                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Barcode Scan", tint = BrandGoldPrimary, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Barcode Scan", tint = BrandPrimary, modifier = Modifier.size(20.dp))
                                 }
                             }
                         },
@@ -400,7 +401,7 @@ fun SellScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = BrandGoldSurface,
+                            color = BrandSurface,
                             border = CardDefaults.outlinedCardBorder(),
                             modifier = Modifier
                                 .weight(1f)
@@ -415,9 +416,9 @@ fun SellScreen(
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Quick Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandGoldPrimary)
+                                Text("Quick Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandPrimary)
                             }
                         }
 
@@ -498,7 +499,7 @@ fun SellScreen(
                             val isSelected = selectedCategory == cat
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = if (isSelected) BrandGoldPrimary else LightSurface,
+                                color = if (isSelected) BrandPrimary else LightSurface,
                                 border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
                                 modifier = Modifier
                                     .height(36.dp)
@@ -520,7 +521,7 @@ fun SellScreen(
                                         softWrap = false,
                                         overflow = TextOverflow.Visible,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) BrandOnGold else TextPrimary
+                                        color = if (isSelected) BrandOnPrimary else TextPrimary
                                     )
                                 }
                             }
@@ -533,7 +534,7 @@ fun SellScreen(
                     item {
                         Card(
                             shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                            colors = CardDefaults.cardColors(containerColor = BrandSurface),
                             border = CardDefaults.outlinedCardBorder(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -558,7 +559,7 @@ fun SellScreen(
                                         showQuickSaleDialog = true
                                     },
                                     shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                                 ) {
                                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -613,8 +614,8 @@ fun SellScreen(
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Badge(containerColor = if (cart.isNotEmpty()) BrandGoldPrimary else TextMuted) {
-                                Text("${cart.sumOf { it.quantity.toInt() }} items", color = BrandOnGold, fontSize = 10.sp)
+                            Badge(containerColor = if (cart.isNotEmpty()) BrandPrimary else TextMuted) {
+                                Text("${cart.sumOf { it.quantity.toInt() }} items", color = BrandOnPrimary, fontSize = 10.sp)
                             }
                         }
 
@@ -709,14 +710,14 @@ fun SellScreen(
                             Text(
                                 CurrencyUtils.formatLkr(totalAmount),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
-                                color = BrandGoldPrimary
+                                color = BrandPrimary
                             )
                         }
 
                         Button(
                             onClick = { showCheckoutSheet = true },
                             enabled = cart.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .height(48.dp)
@@ -841,18 +842,19 @@ fun SellScreen(
             parent = parent,
             children = variantChildrenOf(products, parent),
             addedCount = cart.count { it.productId == parent.id || it.name.startsWith(parent.name) },
-            onAddParent = {
-                viewModel.addToCart(parent)
+            onAddParent = { qty ->
+                viewModel.addToCart(parent, qty)
                 variantPickerProduct = null
             },
-            onAddVariant = { child ->
-                viewModel.addToCart(child)
+            onAddVariant = { child, qty ->
+                viewModel.addToCart(child, qty)
                 variantPickerProduct = null
             },
-            onAddDefinition = { lineName, variantPrice ->
+            onAddDefinition = { lineName, variantPrice, qty ->
                 viewModel.addQuickItemToCart(
                     name = lineName,
-                    price = variantPrice
+                    price = variantPrice,
+                    quantity = qty
                 )
                 variantPickerProduct = null
             },
@@ -1010,7 +1012,7 @@ fun ProductQuickCard(
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (cartQty > 0) BrandGoldSurface else LightSurface
+            containerColor = if (cartQty > 0) BrandSurface else LightSurface
         ),
         border = if (cartQty > 0) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(StatusGreen)) else CardDefaults.outlinedCardBorder(),
         modifier = Modifier
@@ -1049,13 +1051,13 @@ fun ProductQuickCard(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(if (cartQty > 0) StatusGreen else BrandGoldSurface),
+                        .background(if (cartQty > 0) StatusGreen else BrandSurface),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Add,
                         contentDescription = "Add",
-                        tint = if (cartQty > 0) Color.White else BrandOnGold,
+                        tint = if (cartQty > 0) Color.White else BrandOnPrimary,
                         modifier = Modifier.size(15.dp)
                     )
                 }
@@ -1104,7 +1106,7 @@ fun ProductQuickCard(
                     CurrencyUtils.formatLkr(product.sellingPrice),
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp,
-                    color = BrandGoldPrimary
+                    color = BrandPrimary
                 )
                 if (product.isTracked) {
                     val isLow = product.currentStock <= product.lowStockThreshold
@@ -1121,7 +1123,7 @@ fun ProductQuickCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = BrandGoldSurface,
+                    color = BrandSurface,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1131,7 +1133,7 @@ fun ProductQuickCard(
                         Icon(
                             Icons.Default.CallSplit,
                             contentDescription = null,
-                            tint = BrandGoldPrimary,
+                            tint = BrandPrimary,
                             modifier = Modifier.size(11.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
@@ -1139,7 +1141,7 @@ fun ProductQuickCard(
                             "Tap to choose a variant",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = BrandGoldPrimary
+                            color = BrandPrimary
                         )
                     }
                 }
@@ -1156,14 +1158,28 @@ fun VariantPickerDialog(
     parent: ProductEntity,
     children: List<ProductEntity>,
     addedCount: Int = 0,
-    onAddParent: () -> Unit,
-    onAddVariant: (ProductEntity) -> Unit,
-    onAddDefinition: (name: String, price: Double) -> Unit,
+    onAddParent: (qty: Double) -> Unit,
+    onAddVariant: (child: ProductEntity, qty: Double) -> Unit,
+    onAddDefinition: (name: String, price: Double, qty: Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     val groups = VariantCatalog.parseGroups(parent.variants)
     val combos = VariantCatalog.buildCombinations(parent.variants, parent.sellingPrice)
-    var selected by remember(parent.id, parent.variants) { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    // Per-option extra price so each chip can show "+Rs.400" instead of hiding
+    // how the choice moves the price.
+    val extraByOption = remember(parent.variants) {
+        VariantCatalog.parseDrafts(parent.variants, parent.sellingPrice)
+            .flatMap { it.options }
+            .associate { it.name.lowercase() to it.priceAdjustment }
+    }
+
+    // Pre-select the first option in every group so the price and the Add
+    // button are visible the moment the dialog opens (fewer taps).
+    var selected by remember(parent.id, parent.variants) {
+        mutableStateOf(groups.associate { g -> g.name to g.options.firstOrNull().orEmpty() })
+    }
+    var qty by remember(parent.id) { mutableStateOf(1.0) }
 
     val allSelected = groups.all { g -> selected[g.name]?.isNotBlank() == true }
     val selectedCombo: VariantCombination? = if (allSelected && combos.isNotEmpty()) {
@@ -1226,61 +1242,88 @@ fun VariantPickerDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = BrandGoldSurface,
+                    color = BrandSurface,
                     border = CardDefaults.outlinedCardBorder(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(onClick = onAddParent)
+                            .clickable { onAddParent(qty) }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(parent.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                             if (parent.isTracked) {
-                                Text("${parent.currentStock.toInt()} ${parent.unit}", fontSize = 11.sp, color = if (parent.currentStock <= parent.lowStockThreshold) StatusAmber else TextSecondary)
+                                Text(
+                                    "${parent.currentStock.toInt()} ${parent.unit}",
+                                    fontSize = 11.sp,
+                                    color = if (parent.currentStock <= parent.lowStockThreshold) StatusAmber else TextSecondary
+                                )
                             }
                         }
-                        Text(CurrencyUtils.formatLkr(parent.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandGoldPrimary)
+                        Text(CurrencyUtils.formatLkr(parent.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = BrandPrimary)
                     }
                 }
 
-                // Deep options (e.g. Rice + Portion) show one group at a time.
+                // Deep options (e.g. Rice type + Portion) show one group at a time,
+                // two per row, with the extra price on each chip.
                 if (groups.isNotEmpty()) {
                     groups.forEach { group ->
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(group.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            group.options.forEach { option ->
-                                val isChosen = selected[group.name] == option
-                                OutlinedButton(
-                                    onClick = { selected = selected + (group.name to option) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (isChosen) BrandGoldPrimary else LightSurface,
-                                        contentColor = if (isChosen) BrandOnGold else TextPrimary
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(option, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+
+                        group.options.chunked(2).forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                pair.forEach { option ->
+                                    val isChosen = selected[group.name] == option
+                                    val extra = extraByOption[option.lowercase()] ?: 0.0
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isChosen) BrandSurface else LightSurface,
+                                        border = BorderStroke(
+                                            width = if (isChosen) 2.dp else 1.dp,
+                                            color = if (isChosen) BrandPrimary else LightBorder
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { selected = selected + (group.name to option) }
+                                                .padding(10.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                option,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
+                                                color = TextPrimary
+                                            )
+                                            Text(
+                                                if (extra == 0.0) "base" else "+${CurrencyUtils.formatLkr(extra)}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isChosen) BrandPrimaryDark else TextMuted
+                                            )
+                                        }
+                                    }
                                 }
+                                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
 
                     if (allSelected && selectedCombo != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = BrandGoldSurface,
+                            color = BrandSurface,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -1290,32 +1333,60 @@ fun VariantPickerDialog(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "${parent.name} - ${selectedCombo.displayName}",
+                                        "${parent.name} · ${selectedCombo.displayName}",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = TextPrimary
                                     )
-                                    Text("One option", fontSize = 10.sp, color = TextSecondary)
+                                    Text("${CurrencyUtils.formatLkr(selectedCombo.price)} each", fontSize = 10.sp, color = TextSecondary)
                                 }
                                 Text(
-                                    CurrencyUtils.formatLkr(selectedCombo.price),
+                                    CurrencyUtils.formatLkr(selectedCombo.price * qty),
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 15.sp,
-                                    color = BrandGoldPrimary
+                                    fontSize = 16.sp,
+                                    color = BrandPrimary
                                 )
                             }
                         }
+
                         Spacer(modifier = Modifier.height(10.dp))
-                        Button(
-                            onClick = {
-                                val child = VariantCatalog.findChild(children, parent.id, parent.name, selectedCombo)
-                                if (child != null) onAddVariant(child) else onAddDefinition("${parent.name} - ${selectedCombo.displayName}", selectedCombo.price)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
+
+                        // Quantity stepper + Add, one row.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("ADD ${selectedCombo.displayName.uppercase()}", fontWeight = FontWeight.Bold)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = LightSurfaceVariant,
+                                border = CardDefaults.outlinedCardBorder()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { qty = (qty - 1).coerceAtLeast(1.0) }) {
+                                        Icon(Icons.Default.Remove, contentDescription = "Less", tint = TextPrimary)
+                                    }
+                                    Text("${qty.toInt()}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.width(24.dp), textAlign = TextAlign.Center)
+                                    IconButton(onClick = { qty = (qty + 1).coerceAtMost(999.0) }) {
+                                        Icon(Icons.Default.Add, contentDescription = "More", tint = TextPrimary)
+                                    }
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    val child = VariantCatalog.findChild(children, parent.id, parent.name, selectedCombo)
+                                    if (child != null) onAddVariant(child, qty)
+                                    else onAddDefinition("${parent.name} - ${selectedCombo.displayName}", selectedCombo.price, qty)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(50.dp)
+                            ) {
+                                Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("ADD ${selectedCombo.displayName.uppercase()}", fontWeight = FontWeight.Bold)
+                            }
                         }
                     } else {
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1338,17 +1409,21 @@ fun VariantPickerDialog(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onAddVariant(child) }
+                                        .clickable { onAddVariant(child, qty) }
                                         .padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(child.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
                                         if (child.isTracked) {
-                                            Text("${child.currentStock.toInt()} ${child.unit}", fontSize = 11.sp, color = if (child.currentStock <= child.lowStockThreshold) StatusAmber else TextSecondary)
+                                            Text(
+                                                "${child.currentStock.toInt()} ${child.unit}",
+                                                fontSize = 11.sp,
+                                                color = if (child.currentStock <= child.lowStockThreshold) StatusAmber else TextSecondary
+                                            )
                                         }
                                     }
-                                    Text(CurrencyUtils.formatLkr(child.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandGoldPrimary)
+                                    Text(CurrencyUtils.formatLkr(child.sellingPrice), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandPrimary)
                                 }
                             }
                         }
@@ -1371,7 +1446,8 @@ fun VariantPickerDialog(
                                     .fillMaxWidth()
                                     .clickable {
                                         val child = VariantCatalog.findChild(children, parent.id, parent.name, combo)
-                                        if (child != null) onAddVariant(child) else onAddDefinition("${parent.name} - ${combo.displayName}", combo.price)
+                                        if (child != null) onAddVariant(child, qty)
+                                        else onAddDefinition("${parent.name} - ${combo.displayName}", combo.price, qty)
                                     }
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -1379,7 +1455,7 @@ fun VariantPickerDialog(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("${parent.name} - ${combo.displayName}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
                                 }
-                                Text(CurrencyUtils.formatLkr(combo.price), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandGoldPrimary)
+                                Text(CurrencyUtils.formatLkr(combo.price), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BrandPrimary)
                             }
                         }
                     }
@@ -1443,7 +1519,7 @@ fun TodayShiftOverviewDialog(
                 ) {
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                        colors = CardDefaults.cardColors(containerColor = BrandSurface),
                         border = CardDefaults.outlinedCardBorder(),
                         modifier = Modifier.weight(1.3f)
                     ) {
@@ -1453,7 +1529,7 @@ fun TodayShiftOverviewDialog(
                                 CurrencyUtils.formatLkr(totalSales),
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 15.sp,
-                                color = BrandGoldPrimary
+                                color = BrandPrimary
                             )
                             Text("$orderCount ${if (orderCount == 1) "bill" else "bills"}", fontSize = 11.sp, color = TextSecondary)
                         }
@@ -1511,7 +1587,7 @@ fun TodayShiftOverviewDialog(
                         Icon(
                             if (showChart) Icons.Default.ExpandLess else Icons.Default.ShowChart,
                             contentDescription = null,
-                            tint = BrandGoldPrimary,
+                            tint = BrandPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -1519,7 +1595,7 @@ fun TodayShiftOverviewDialog(
                             if (showChart) "Hide Revenue Chart" else "View Revenue Growth Trajectory",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = BrandGoldPrimary
+                            color = BrandPrimary
                         )
                     }
                 }
@@ -1542,7 +1618,7 @@ fun TodayShiftOverviewDialog(
 
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(46.dp)
                 ) {
@@ -1624,16 +1700,16 @@ fun HeldSalesPickerDialog(
                                         CurrencyUtils.formatLkr(held.totalAmount),
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 14.sp,
-                                        color = BrandGoldPrimary
+                                        color = BrandPrimary
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
-                                        color = BrandGoldPrimary
+                                        color = BrandPrimary
                                     ) {
                                         Text(
                                             "RESUME",
-                                            color = BrandOnGold,
+                                            color = BrandOnPrimary,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -1808,7 +1884,7 @@ fun BarcodeEntryDialog(
                     },
                     label = { Text("Barcode") },
                     leadingIcon = {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BrandGoldPrimary)
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BrandPrimary)
                     },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -1832,7 +1908,7 @@ fun BarcodeEntryDialog(
                     onClick = { if (barcode.isNotBlank()) onBarcodeEntered(barcode) },
                     enabled = barcode.isNotBlank(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
@@ -1932,7 +2008,7 @@ fun CameraScannerDialog(
                         Button(
                             onClick = { launcher.launch(Manifest.permission.CAMERA) },
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Allow camera", fontWeight = FontWeight.Bold)
@@ -2124,7 +2200,7 @@ fun QuickItemDialog(
                         }
                     },
                     enabled = priceText.toDoubleOrNull() != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -2260,7 +2336,7 @@ fun QuickSaleDialog(
                     Button(
                         onClick = { if (price > 0) onAddItem(name.ifBlank { "Quick Item" }, price, qty, 0.0, saveAsPermanent) },
                         enabled = price > 0 && name.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) {
@@ -2328,15 +2404,15 @@ private fun QuickModeButton(
     Surface(
         modifier = modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(10.dp),
-        color = if (selected) BrandGoldPrimary else LightSurfaceVariant,
+        color = if (selected) BrandPrimary else LightSurfaceVariant,
         border = if (selected) null else CardDefaults.outlinedCardBorder()
     ) {
         Column(
             modifier = Modifier.padding(vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selected) BrandOnGold else TextPrimary)
-            Text(sub, fontSize = 9.sp, color = if (selected) BrandOnGold.copy(alpha = 0.8f) else TextSecondary)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selected) BrandOnPrimary else TextPrimary)
+            Text(sub, fontSize = 9.sp, color = if (selected) BrandOnPrimary.copy(alpha = 0.8f) else TextSecondary)
         }
     }
 }
@@ -2418,7 +2494,7 @@ fun CustomerPickerDialog(
                             val c = filtered[idx]
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (selected?.id == c.id) BrandGoldSurface else LightSurfaceVariant,
+                                color = if (selected?.id == c.id) BrandSurface else LightSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().clickable { onSelect(c) }
                             ) {
                                 Row(
@@ -2479,7 +2555,7 @@ fun CustomerPickerDialog(
                             if (newName.isNotBlank()) onAddNew(newName, newPhone)
                         },
                         enabled = newName.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -2565,7 +2641,7 @@ fun DiscountDialog(
                             val disc = discountText.toDoubleOrNull() ?: 0.0
                             onApply(disc)
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -2612,7 +2688,7 @@ fun HoldSaleDialog(
 
                 Button(
                     onClick = { onHold(label) },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -2666,7 +2742,7 @@ fun CheckoutSheet(
                 Text(
                     CurrencyUtils.formatLkr(totalAmount),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                    color = BrandGoldPrimary
+                    color = BrandPrimary
                 )
             }
 
@@ -2748,7 +2824,7 @@ fun CheckoutSheet(
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGoldSurface),
+                        colors = CardDefaults.cardColors(containerColor = BrandSurface),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2761,7 +2837,7 @@ fun CheckoutSheet(
                                 CurrencyUtils.formatLkr(change),
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
-                                color = BrandGoldPrimary
+                                color = BrandPrimary
                             )
                         }
                     }
@@ -2816,7 +2892,7 @@ fun CheckoutSheet(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = BrandGoldPrimary, modifier = Modifier.size(36.dp))
+                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(36.dp))
                             Spacer(modifier = Modifier.height(6.dp))
                             Text("Swipe or Tap Card on POS Terminal", fontWeight = FontWeight.Bold)
                             Text("Full amount ${CurrencyUtils.formatLkr(totalAmount)} will be charged.", fontSize = 12.sp, color = TextSecondary)
@@ -2890,15 +2966,15 @@ fun CheckoutSheet(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (splitRemainingMethod == "CARD") BrandGoldPrimary else LightSurfaceVariant,
+                                color = if (splitRemainingMethod == "CARD") BrandPrimary else LightSurfaceVariant,
                                 modifier = Modifier.weight(1f).clickable { splitRemainingMethod = "CARD" }
                             ) {
                                 Column(
                                     modifier = Modifier.padding(vertical = 10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(Icons.Default.CreditCard, contentDescription = null, tint = if (splitRemainingMethod == "CARD") BrandOnGold else TextSecondary, modifier = Modifier.size(18.dp))
-                                    Text("On card", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CARD") BrandOnGold else TextPrimary)
+                                    Icon(Icons.Default.CreditCard, contentDescription = null, tint = if (splitRemainingMethod == "CARD") BrandOnPrimary else TextSecondary, modifier = Modifier.size(18.dp))
+                                    Text("On card", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (splitRemainingMethod == "CARD") BrandOnPrimary else TextPrimary)
                                 }
                             }
                             Surface(
@@ -2982,7 +3058,7 @@ fun CheckoutSheet(
                     }
                 },
                 enabled = enableComplete,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3043,7 +3119,7 @@ fun CheckoutSheet(
                         }
                     },
                     enabled = newCustomerName.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
                 ) {
                     Text("Save & select")
                 }
@@ -3068,7 +3144,7 @@ fun PaymentModeButton(
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        color = if (isSelected) BrandGoldPrimary else LightSurfaceVariant,
+        color = if (isSelected) BrandPrimary else LightSurfaceVariant,
         border = if (isSelected) null else CardDefaults.outlinedCardBorder()
     ) {
         Column(
@@ -3078,7 +3154,7 @@ fun PaymentModeButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isSelected) BrandOnGold else TextSecondary,
+                tint = if (isSelected) BrandOnPrimary else TextSecondary,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -3086,7 +3162,7 @@ fun PaymentModeButton(
                 title,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (isSelected) BrandOnGold else TextPrimary
+                color = if (isSelected) BrandOnPrimary else TextPrimary
             )
         }
     }
@@ -3142,7 +3218,7 @@ fun SaleCompleteDialog(
                         CurrencyUtils.formatLkr(sale.totalAmount),
                         fontWeight = FontWeight.Black,
                         fontSize = 24.sp,
-                        color = BrandGoldPrimary
+                        color = BrandPrimary
                     )
 
                     if (sale.paymentMethod == "CASH" && sale.changeGiven > 0) {
@@ -3251,7 +3327,7 @@ fun SaleCompleteDialog(
 
                     Button(
                         onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3340,9 +3416,9 @@ fun EditCartLineSheet(
                 FilledTonalIconButton(
                     onClick = { qty += 1.0 },
                     modifier = Modifier.size(52.dp),
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandGoldSurface)
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = BrandSurface)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "More", tint = BrandGoldPrimary)
+                    Icon(Icons.Default.Add, contentDescription = "More", tint = BrandPrimary)
                 }
             }
 
@@ -3368,7 +3444,7 @@ fun EditCartLineSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("edit_price"),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
                 )
 
                 if (below || above) {
@@ -3422,7 +3498,7 @@ fun EditCartLineSheet(
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGoldPrimary)
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPrimary)
                 )
                 Spacer(modifier = Modifier.height(18.dp))
             }
@@ -3439,7 +3515,7 @@ fun EditCartLineSheet(
 
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = BrandGoldSurface,
+                color = BrandSurface,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -3452,7 +3528,7 @@ fun EditCartLineSheet(
                         CurrencyUtils.formatLkr(lineTotal),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = BrandGoldPrimary
+                        color = BrandPrimary
                     )
                 }
             }
@@ -3469,7 +3545,7 @@ fun EditCartLineSheet(
                     onDismiss()
                 },
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGoldPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
