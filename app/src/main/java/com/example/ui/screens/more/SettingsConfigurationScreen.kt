@@ -537,7 +537,7 @@ fun SettingsConfigurationScreen(
                         // Real sample bill built by the same code that drives the
                         // printer, so nothing here can drift from what comes out.
                         val previewText = remember(
-                            name, phone, address, receiptHeaderName, receiptHeaderNote,
+                            name, fullPhone, address, receiptHeaderName, receiptHeaderNote,
                             receiptShowAddress, receiptShowPhone, receiptShowDateTime,
                             receiptShowCashier, receiptShowItemCount, receiptReturnNote,
                             receiptFooter, printerWidth

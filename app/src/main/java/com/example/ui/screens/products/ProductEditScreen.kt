@@ -179,7 +179,7 @@ fun ProductEditScreen(
     children: List<ProductEntity> = emptyList(),
     categoryOptions: List<String> = emptyList(),
     /** Sub-categories per category, so the second list follows the first. */
-    subCategoryOptions: Map<String, List<String>> = emptyList(),
+    subCategoryOptions: Map<String, List<String>> = emptyMap(),
     onSave: (ProductSaveRequest) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit

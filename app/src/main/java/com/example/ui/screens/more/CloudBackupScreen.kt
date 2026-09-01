@@ -361,6 +361,7 @@ fun ProviderCloudScreen(
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    val formScroll = rememberScrollState()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -425,7 +426,6 @@ fun ProviderCloudScreen(
                     var hourly by remember { mutableStateOf(cloud.hourlySyncEnabled) }
                     var daily by remember { mutableStateOf(cloud.dailyBackupEnabled) }
                     var accessCode by remember { mutableStateOf("") }
-    val formScroll = rememberScrollState()
 
                     Text(
                         "This controls cloud backup and Google Drive sync. The owner can only connect an account and press Backup/Sync.",
