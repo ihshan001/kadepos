@@ -357,7 +357,18 @@ fun ProductsScreen(
                             product = product,
                             onEdit = { editingProduct = product },
                             onRestock = { restockingProduct = product },
-                            onAddToCart = { viewModel.addToCart(product) }
+                            onAddToCart = {
+                                // An item with options has to be chosen from
+                                // the selling screen, where each option shows
+                                // its own price and what is left of it.
+                                if (product.variants.isNotBlank()) {
+                                    viewModel.showMessage(
+                                        "Choose ${product.name} from the Sell tab to pick an option"
+                                    )
+                                } else {
+                                    viewModel.addToCart(product)
+                                }
+                            }
                         )
                     }
                 }
