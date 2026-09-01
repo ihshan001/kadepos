@@ -178,7 +178,8 @@ fun ProductEditScreen(
     /** Existing stock lines of [product], so counts are never reset to zero. */
     children: List<ProductEntity> = emptyList(),
     categoryOptions: List<String> = emptyList(),
-    subCategoryOptions: List<String> = emptyList(),
+    /** Sub-categories per category, so the second list follows the first. */
+    subCategoryOptions: Map<String, List<String>> = emptyList(),
     onSave: (ProductSaveRequest) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -222,8 +223,7 @@ fun ProductEditScreen(
                             subCategoryOptions = subCategoryOptions,
                             scrollState = scroll,
                             onSave = { buildRequest(form, product).let(onSave) },
-                            onDelete = onDelete,
-                            onDismiss = onDismiss
+                            onDelete = onDelete
                         )
                     }
                 }
@@ -615,6 +615,7 @@ private fun FirstOptionsStep(
     onNext: (Int) -> Unit
 ) {
     val scroll = rememberScrollState()
+    var addingOption by remember { mutableStateOf(false) }
     val draft = form.options
     val wantsOptions = draft.hasOptions
 
@@ -724,7 +725,62 @@ private fun FirstOptionsStep(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // The options themselves are chips, so removing one is a tap on
+                // the little cross instead of hunting for a delete button.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    draft.options.forEachIndexed { index, option ->
+                        RemovableChip(
+                            label = option.name.ifBlank { "Option ${index + 1}" },
+                            onRemove = {
+                                onChange(
+                                    form.updateOptions(
+                                        draft.copy(options = draft.options.removed(index))
+                                    )
+                                )
+                            }
+                        )
+                    }
+                    AddChip(
+                        label = "Add option",
+                        active = addingOption,
+                        onClick = { addingOption = !addingOption }
+                    )
+                }
+
+                if (addingOption) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AddNameRow(
+                        label = "New option",
+                        placeholder = "e.g. Regular",
+                        buttonText = "Add option",
+                        scrollState = scroll,
+                        onAdd = { name ->
+                            onChange(
+                                form.updateOptions(
+                                    draft.copy(
+                                        options = draft.options + ProductOptionDraft(
+                                            name = name,
+                                            // Pre-filled so the owner only
+                                            // changes the difference, not the
+                                            // whole price.
+                                            price = form.priceValue
+                                        )
+                                    )
+                                )
+                            )
+                            addingOption = false
+                        }
+                    )
+                }
+
                 if (draft.options.isEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = LightSurfaceVariant,
@@ -759,27 +815,6 @@ private fun FirstOptionsStep(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-                AddNameRow(
-                    label = "New option",
-                    placeholder = "e.g. Regular",
-                    buttonText = "Add option",
-                    scrollState = scroll,
-                    onAdd = { name ->
-                        onChange(
-                            form.updateOptions(
-                                draft.copy(
-                                    options = draft.options + ProductOptionDraft(
-                                        name = name,
-                                        // Pre-filled so the owner only changes
-                                        // the difference, not the whole price.
-                                        price = form.priceValue
-                                    )
-                                )
-                            )
-                        )
-                    }
-                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -1139,11 +1174,10 @@ private fun NormalMode(
     form: ProductForm,
     onChange: (ProductForm) -> Unit,
     categoryOptions: List<String>,
-    subCategoryOptions: List<String>,
+    subCategoryOptions: Map<String, List<String>>,
     scrollState: ScrollState,
     onSave: () -> Unit,
-    onDelete: (() -> Unit)?,
-    onDismiss: () -> Unit
+    onDelete: (() -> Unit)?
 ) {
     val split = form.options.isSplit
     val profit = (form.priceValue - form.costValue).coerceAtLeast(0.0)
@@ -1179,7 +1213,9 @@ private fun NormalMode(
                     )
                     DropdownField(
                         value = form.subCategory,
-                        options = subCategoryOptions,
+                        // Only the sub-categories that belong to the category
+                        // above, plus "add new" for anything else.
+                        options = subCategoryOptions[form.category].orEmpty(),
                         onValueChange = { onChange(form.copy(subCategory = it)) },
                         label = "Sub-category",
                         modifier = Modifier.weight(1f),
@@ -1664,6 +1700,72 @@ private fun SuggestionChip(
 }
 
 @Composable
+private fun RemovableChip(
+    label: String,
+    onRemove: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = BrandSurface,
+        border = BorderStroke(1.dp, BrandPrimary)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandPrimaryDark
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove $label",
+                tint = BrandPrimary,
+                modifier = Modifier
+                    .size(14.dp)
+                    .clickable(onClick = onRemove)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddChip(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (active) BrandSurface else LightSurface,
+        border = BorderStroke(1.dp, if (active) BrandPrimary else LightBorder),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (active) Icons.Default.ExpandLess else Icons.Default.Add,
+                contentDescription = null,
+                tint = BrandPrimary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandPrimary
+            )
+        }
+    }
+}
+
+@Composable
 private fun UnitChipRow(
     units: List<String>,
     selected: String,
@@ -1942,15 +2044,14 @@ private fun SubOptionEditor(
                     color = TextSecondary
                 )
             } else {
-                option.subOptions.chunked(3).forEach { row ->
+                option.subOptions.withIndex().chunked(3).forEach { row ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 3.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        row.forEachIndexed { rowIndex, sub ->
-                            val index = option.subOptions.indexOf(sub)
+                        row.forEach { (index, sub) ->
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = LightSurfaceVariant,
@@ -1982,9 +2083,9 @@ private fun SubOptionEditor(
                                     }
                                 }
                             }
-                            if (rowIndex == row.lastIndex && row.size < 3) {
-                                repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
-                            }
+                        }
+                        if (row.size < 3) {
+                            repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
                         }
                     }
                 }

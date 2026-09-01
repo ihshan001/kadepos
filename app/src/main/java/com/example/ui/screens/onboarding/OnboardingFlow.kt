@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +41,7 @@ import com.example.ui.components.ChoiceCard
 import com.example.ui.components.HintCard
 import com.example.ui.components.HintTone
 import com.example.ui.components.PhoneField
+import com.example.ui.components.keyboardPadding
 import com.example.ui.components.PrimaryActionButton
 import com.example.ui.theme.*
 import com.example.ui.util.Country
@@ -331,13 +333,14 @@ private fun ShopDetailsStep(
         onContinue = { touched = true; if (allValid) onNext() },
         onBlockedAttempt = { touched = true },
         testTag = "continue_details"
-    ) {
+    ) { scroll ->
         SetupField(
             label = "Shop name",
             value = draft.businessName,
             onValueChange = { onChange(draft.copy(businessName = it)) },
             placeholder = "e.g. Sunrise Grocery",
             icon = Icons.Default.Storefront,
+            scrollState = scroll,
             error = if (touched) nameError else null,
             testTag = "shop_name_input"
         )
@@ -349,6 +352,7 @@ private fun ShopDetailsStep(
             placeholder = "e.g. Morgan Blake",
             icon = Icons.Default.Person,
             keyboardType = KeyboardType.Text,
+            scrollState = scroll,
             error = if (touched) ownerError else null,
             testTag = "owner_name_input"
         )
@@ -363,6 +367,7 @@ private fun ShopDetailsStep(
             error = if (touched) phoneError else null,
             label = "Phone number",
             placeholder = "777777700",
+            scrollState = scroll,
             testTag = "phone_input"
         )
 
@@ -373,6 +378,7 @@ private fun ShopDetailsStep(
             placeholder = "e.g. 24 Market Street",
             icon = Icons.Default.LocationOn,
             singleLine = false,
+            scrollState = scroll,
             error = if (touched) addressError else null,
             testTag = "address_input"
         )
@@ -594,7 +600,7 @@ private fun TeamStep(
         onContinue = { touched = true; if (canContinue) onNext() },
         onBlockedAttempt = { touched = true },
         testTag = "continue_team"
-    ) {
+    ) { scroll ->
         ChoiceCard(
             title = "Just me",
             subtitle = "No sign-in screen — the app opens straight into selling",
@@ -626,6 +632,7 @@ private fun TeamStep(
                 placeholder = "____",
                 icon = Icons.Default.Lock,
                 keyboardType = KeyboardType.NumberPassword,
+                scrollState = scroll,
                 isSecret = true,
                 error = if (touched) pinError else null,
                 testTag = "owner_pin_input"
@@ -638,6 +645,7 @@ private fun TeamStep(
                 placeholder = "____",
                 icon = Icons.Default.LockReset,
                 keyboardType = KeyboardType.NumberPassword,
+                scrollState = scroll,
                 isSecret = true,
                 error = if (touched) confirmError else null,
                 testTag = "owner_pin_confirm_input"
@@ -885,8 +893,9 @@ private fun StepScaffold(
     onContinue: () -> Unit,
     testTag: String,
     onBlockedAttempt: () -> Unit = {},
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.(ScrollState) -> Unit
 ) {
+    val scrollState = rememberScrollState()
     Scaffold(
         topBar = { StepTopBar(step = step, onBack = onBack) },
         containerColor = LightBackground,
@@ -924,7 +933,9 @@ private fun StepScaffold(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState)
+                // Keep the bottom of the form clear of the keyboard.
+                .keyboardPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
@@ -937,7 +948,7 @@ private fun StepScaffold(
             )
             Text(subtitle, fontSize = 14.sp, color = TextSecondary, lineHeight = 20.sp)
             Spacer(modifier = Modifier.height(2.dp))
-            content()
+            content(scrollState)
             Spacer(modifier = Modifier.height(20.dp))
         }
     }

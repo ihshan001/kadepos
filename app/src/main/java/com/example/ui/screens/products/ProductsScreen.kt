@@ -91,13 +91,19 @@ fun ProductsScreen(
     val categoryOptions = remember(parentRows) {
         parentRows.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
     }
-    val subCategoryOptions = remember(parentRows) {
-        parentRows.filter { it.subCategory.isNotBlank() }
-            .flatMap { it.subCategory.split(">") }
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
+    // Sub-categories grouped by their category: picking a category on the
+    // Add/Edit screen should narrow the second list, not offer everything.
+    val subCategoryOptionsByCategory = remember(parentRows) {
+        parentRows
+            .filter { it.subCategory.isNotBlank() }
+            .groupBy(keySelector = { it.category }, valueTransform = { it.subCategory })
+            .mapValues { (_, subs) ->
+                subs.flatMap { it.split(">") }
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+            }
     }
 
     val filteredProducts = remember(products, parentRows, searchQuery, selectedFilter) {
@@ -371,7 +377,7 @@ fun ProductsScreen(
                 products.filter { it.isVariant && it.parentProductId == edited.id }
             },
             categoryOptions = categoryOptions,
-            subCategoryOptions = subCategoryOptions,
+            subCategoryOptions = subCategoryOptionsByCategory,
             onSave = { request ->
                 viewModel.saveProduct(
                     id = request.id,
