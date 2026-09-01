@@ -22,14 +22,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.data.model.BusinessProfileEntity
-import com.example.data.model.CashRegisterShiftEntity
-import com.example.data.model.ExpenseEntity
 import com.example.data.model.StaffEntity
-import com.example.data.model.SupplierEntity
 import com.example.ui.theme.*
 import com.example.ui.util.CurrencyUtils
 import com.example.data.model.StaffRole
@@ -92,6 +90,8 @@ fun HubMenuScreen(
 ) {
     val profile by viewModel.profile.collectAsState()
     val permissions by viewModel.permissions.collectAsState()
+    val isOwnerOrManager =
+        permissions.role == StaffRole.OWNER || permissions.role == StaffRole.MANAGER
     val customers by viewModel.customers.collectAsState()
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val printerConnected by viewModel.isPrinterConnected.collectAsState()
@@ -291,14 +291,20 @@ fun HubMenuScreen(
                 }
             }
 
-            if (permissions.can(Permission.MANAGE_SETTINGS) && cloudSettings?.providerEnabled == true) {
+            // Cloud & Backup belongs to the people who own the shop's data.
+            // The provider has to allow it first, and then only an Owner or a
+            // Manager sees it — a cashier has no business holding the backup
+            // switch.
+            if (cloudSettings?.providerEnabled == true && isOwnerOrManager) {
                 item {
                     HubActionCard(
-                        title = "Backup & Cloud",
-                        subtitle = if (cloudSettings?.ownerGmail.isNullOrBlank()) {
-                            "Connect a Google account to keep a safe copy"
+                        title = "Cloud & Backup",
+                        subtitle = if (cloudSettings?.ownerBackupEnabled == false) {
+                            "Switched off on this phone"
+                        } else if (cloudSettings?.ownerGmail.isNullOrBlank()) {
+                            "Connect your Google mail to keep a safe copy"
                         } else {
-                            "Connected to ${cloudSettings?.ownerGmail}"
+                            "Copying to ${cloudSettings?.ownerGmail}"
                         },
                         icon = Icons.Default.Cloud,
                         onClick = { onSelectDestination(MoreDestination.CLOUD) }
@@ -693,254 +699,6 @@ fun ReportMetricRow(label: String, value: String, color: Color) {
 // -------------------------------------------------------------------------------------
 // Suppliers & Purchases Screen
 // -------------------------------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SuppliersScreen(
-    viewModel: PosViewModel,
-    onBack: () -> Unit
-) {
-    val suppliers by viewModel.suppliers.collectAsState()
-    var showAddSupplierDialog by remember { mutableStateOf(false) }
-    var supplierToPay by remember { mutableStateOf<SupplierEntity?>(null) }
-
-    Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
-            .only(WindowInsetsSides.Top),
-        topBar = {
-            TopAppBar(
-                title = { Text("Suppliers & Purchases", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddSupplierDialog = true },
-                containerColor = BrandPrimary,
-                contentColor = BrandOnPrimary,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New Supplier", fontWeight = FontWeight.Bold) }
-            )
-        },
-        containerColor = LightBackground
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                val totalPayable = suppliers.sumOf { it.outstandingBalance }
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = StatusAmberBg),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("SUPPLIER OUTSTANDING PAYABLES", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusAmber)
-                            Text(CurrencyUtils.formatLkr(totalPayable), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                        }
-                    }
-                }
-            }
-
-            items(suppliers, key = { it.id }) { sup ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = LightSurface),
-                    border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(sup.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("Contact: ${sup.contactPerson} (${sup.phone})", fontSize = 12.sp, color = TextSecondary)
-                            Text("Total Purchased: ${CurrencyUtils.formatLkr(sup.totalPurchased)}", fontSize = 11.sp, color = TextMuted)
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            if (sup.outstandingBalance > 0) {
-                                Text(CurrencyUtils.formatLkr(sup.outstandingBalance), fontWeight = FontWeight.Bold, color = StatusAmber)
-                                Text("Payable", fontSize = 11.sp, color = StatusAmber)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                FilledTonalButton(
-                                    onClick = { supplierToPay = sup },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(28.dp)
-                                ) {
-                                    Text("Pay", fontSize = 11.sp)
-                                }
-                            } else {
-                                Badge(containerColor = StatusGreenBg) {
-                                    Text("Settled", color = StatusGreen, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAddSupplierDialog) {
-        AddSupplierDialog(
-            onSave = { name, person, phone, email, notes ->
-                viewModel.saveSupplier(0, name, person, phone, email, "", notes)
-                showAddSupplierDialog = false
-            },
-            onDismiss = { showAddSupplierDialog = false }
-        )
-    }
-
-    if (supplierToPay != null) {
-        RecordSupplierPaymentDialog(
-            supplier = supplierToPay!!,
-            onConfirm = { amt, method, note ->
-                viewModel.recordSupplierPayment(supplierToPay!!.id, amt, method, note)
-                supplierToPay = null
-            },
-            onDismiss = { supplierToPay = null }
-        )
-    }
-}
-
-@Composable
-fun AddSupplierDialog(
-    onSave: (name: String, person: String, phone: String, email: String, notes: String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var person by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("ADD SUPPLIER", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Company / Supplier Name *") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = person,
-                    onValueChange = { person = it },
-                    label = { Text("Contact Person") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Phone Number") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = { if (name.isNotBlank()) onSave(name, person, phone, "", "") },
-                    enabled = name.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("SAVE SUPPLIER", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun RecordSupplierPaymentDialog(
-    supplier: SupplierEntity,
-    onConfirm: (amount: Double, method: String, note: String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var amountText by remember { mutableStateOf(supplier.outstandingBalance.toInt().toString()) }
-    var method by remember { mutableStateOf("CASH") }
-    var note by remember { mutableStateOf("") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("PAY SUPPLIER", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(supplier.name, fontSize = 13.sp, color = TextSecondary)
-                Text("Payable: ${CurrencyUtils.formatLkr(supplier.outstandingBalance)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = StatusAmber)
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { amountText = it },
-                    label = { Text("Amount (Rs.)") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("CASH", "BANK", "CHEQUE").forEach { m ->
-                        FilterChip(
-                            selected = method == m,
-                            onClick = { method = m },
-                            label = { Text(m) }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-                Button(
-                    onClick = {
-                        val amount = amountText.toDoubleOrNull() ?: 0.0
-                        if (amount > 0) onConfirm(amount, method, note)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("RECORD PAYMENT", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
 
 // -------------------------------------------------------------------------------------
 // Cash Register & Shifts Screen
@@ -1449,6 +1207,8 @@ private fun StaffEditorDialog(
     var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
     var role by remember { mutableStateOf(existing?.let { StaffRole.fromName(it.role) } ?: defaultRole) }
     var pin by remember { mutableStateOf("") }
+    // A PIN typed on a phone deserves to be checked before it is saved.
+    var pinRevealed by remember { mutableStateOf(false) }
     var active by remember { mutableStateOf(existing?.isActive ?: true) }
 
     val nameOk = name.trim().isNotBlank()
@@ -1537,6 +1297,20 @@ private fun StaffEditorDialog(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = if (pinRevealed) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { pinRevealed = !pinRevealed }) {
+                            Icon(
+                                imageVector = if (pinRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (pinRevealed) "Hide the PIN" else "Show the PIN",
+                                tint = TextSecondary
+                            )
+                        }
+                    },
                     supportingText = {
                         Text(
                             "They type this to sign in. Every bill records who sold it.",
@@ -1715,151 +1489,9 @@ private fun StaffPermissionsDialog(
     }
 }
 
-
 // -------------------------------------------------------------------------------------
 // Settings Screen
 // -------------------------------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(
-    viewModel: PosViewModel,
-    onBack: () -> Unit
-) {
-    val profile by viewModel.profile.collectAsState()
-    var name by remember { mutableStateOf(profile?.name.orEmpty()) }
-    var phone by remember { mutableStateOf(profile?.phone ?: "077 123 4567") }
-    var address by remember { mutableStateOf(profile?.address ?: "123 Main Street, Colombo") }
-    var footer by remember { mutableStateOf(profile?.receiptFooter ?: "Thank you!") }
-    var printerWidth by remember { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
-
-    Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
-            .only(WindowInsetsSides.Top),
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = LightSurface)
-            )
-        },
-        containerColor = LightBackground
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Text("STORE INFORMATION", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-            }
-
-            item {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Shop Name") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Phone Number") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text("Address") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("RECEIPT & PRINTER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextSecondary)
-            }
-
-            item {
-                OutlinedTextField(
-                    value = footer,
-                    onValueChange = { footer = it },
-                    label = { Text("Receipt Footer Message") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Paper Width", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = printerWidth == "58mm", onClick = { printerWidth = "58mm" }, label = { Text("58mm") })
-                        FilterChip(selected = printerWidth == "80mm", onClick = { printerWidth = "80mm" }, label = { Text("80mm") })
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        val current = profile ?: BusinessProfileEntity()
-                        viewModel.saveBusinessProfile(
-                            current.copy(
-                                name = name,
-                                phone = phone,
-                                address = address,
-                                receiptFooter = footer,
-                                printerPaperWidth = printerWidth
-                            )
-                        )
-                        onBack()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("SAVE SETTINGS", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            item {
-                OutlinedButton(
-                    onClick = { viewModel.setOnboardingStep(1) },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.RestartAlt, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Re-run Setup Wizard")
-                }
-            }
-        }
-    }
-}
 
 // -------------------------------------------------------------------------------------
 // Activity Log — a plain, readable trail of everything that matters

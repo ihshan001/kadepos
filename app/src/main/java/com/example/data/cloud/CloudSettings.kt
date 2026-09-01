@@ -20,6 +20,12 @@ data class CloudSettings(
     val hourlySyncEnabled: Boolean = true,
     val dailyBackupEnabled: Boolean = true,
     val keepBackupDays: Int = 30,
+    /**
+     * The shop's own switch. The provider decides whether this device is
+     * *allowed* to back up; the owner decides whether it actually does. Both
+     * must be on for a copy to be made.
+     */
+    val ownerBackupEnabled: Boolean = true,
     // Owner-visible, owner-editable.
     val ownerGmail: String = "",
     val deviceName: String = "",
@@ -33,9 +39,18 @@ data class CloudSettings(
     val pendingChanges: Int = 0,
     val accountConnected: Boolean = false
 ) {
-    val isActive: Boolean get() = providerEnabled
+    /** True only when the provider allowed it *and* the shop left it on. */
+    val isActive: Boolean get() = providerEnabled && ownerBackupEnabled
     val isConflict: Boolean get() = providerEnabled && ownerGmail.isBlank()
     fun requiresProviderContact(): Boolean = !providerEnabled
+    /** Why nothing is being copied right now, in plain words. */
+    fun statusLine(): String = when {
+        !providerEnabled -> "Not switched on by your POS provider yet"
+        !ownerBackupEnabled -> "Switched off on this phone"
+        ownerGmail.isBlank() -> "Add your Google mail to start copying"
+        lastError.isNotBlank() -> "Needs attention"
+        else -> "On — bills and stock are being copied"
+    }
 
     companion object {
         const val DEFAULT_ACCESS_CODE_HINT = "Set by your POS provider"

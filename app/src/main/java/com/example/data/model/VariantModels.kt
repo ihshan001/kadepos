@@ -17,6 +17,23 @@ package com.example.data.model
  *
  * The storage stays in the existing `products.variants` TEXT column, so this
  * feature needs no migration: it is a richer way of writing the same field.
+ *
+ * The Add/Edit product screen additionally writes one exact line per
+ * sellable combination, each starting with `=`:
+ *
+ * ```
+ * Colour: Green|Black
+ * Size: 32|34|36|40|L|XL
+ * =Green/32|850
+ * =Green/34|850
+ * =Black/L|850
+ * =Black/XL|900
+ * ```
+ *
+ * Those lines are the truth whenever they exist, because a plain cross-product
+ * cannot say "Green comes in sizes but Black only comes in L and XL". Products
+ * saved before them keep working: without `=` lines the groups are crossed as
+ * before.
  */
 data class VariantGroup(
     val name: String,
@@ -48,10 +65,45 @@ data class VariantGroupDraft(
 
 object VariantCatalog {
 
+    /**
+     * Marks a line that names one exact sellable combination, e.g.
+     * `=Green/32|850`. The Add/Edit product screen writes one per row of its
+     * combination table, which is how "Green comes in 32/34/36/40 but Black
+     * only comes in L/XL" survives being saved.
+     */
+    const val COMBO_PREFIX = '='
+
+    /** How many combinations a one-line card summary spells out before "+N more". */
+    private const val SUMMARY_LIMIT = 8
+
+    /** Stable, case-insensitive key for one combination's labels. */
+    fun comboKey(labels: List<String>): String =
+        labels.joinToString("/").trim().lowercase()
+
+    /**
+     * The exact combinations the editor saved, in the order it saved them.
+     * The price is null for a line that only names the combination.
+     */
+    fun parseDefinedCombos(raw: String): List<Pair<List<String>, Double?>> =
+        lines(raw).mapNotNull { line ->
+            if (!line.startsWith(COMBO_PREFIX)) return@mapNotNull null
+            val body = line.removePrefix(COMBO_PREFIX.toString()).trim()
+            val bar = body.lastIndexOf('|')
+            val head = if (bar > 0) body.substring(0, bar) else body
+            val labels = splitOptionPath(head)
+            if (labels.isEmpty()) return@mapNotNull null
+            val price = if (bar > 0) body.substring(bar + 1).trim().toDoubleOrNull() else null
+            labels to price
+        }
+
+    /** True when the field carries exact combination lines. */
+    fun hasDefinedCombos(raw: String): Boolean = parseDefinedCombos(raw).isNotEmpty()
+
     /** Parses the group lines: `Rice: Basmati|Keeri`. */
     fun parseGroups(raw: String): List<VariantGroup> {
         val groups = mutableListOf<VariantGroup>()
         lines(raw).forEach { line ->
+            if (line.startsWith(COMBO_PREFIX)) return@forEach
             val colon = line.indexOf(':')
             if (colon > 0) {
                 val name = line.substring(0, colon).trim()
@@ -79,9 +131,29 @@ object VariantCatalog {
      *  1. an explicit combination line, e.g. `Basmati/Regular|1200`
      *  2. the base selling price plus any option deltas (`Full+200`, `Keeri+50`)
      *  3. the product base / selling price
+     *
+     * When the field carries exact `=Green/32|850` lines, those lines decide
+     * both *which* combinations exist and what they cost: every first choice
+     * can then carry its own second choices.
      */
     fun buildCombinations(raw: String, basePrice: Double): List<VariantCombination> {
         val groups = parseGroups(raw)
+
+        val defined = parseDefinedCombos(raw)
+        if (defined.isNotEmpty()) {
+            val overrides = parseOverridePrices(raw)
+            val deltas = parseDeltas(raw, groups)
+            return defined.map { (labels, explicitPrice) ->
+                val explicit = explicitPrice
+                    ?: overrides.firstOrNull { matches(labels, it.first) }?.second
+                val delta = labels.sumOf { deltas[it.lowercase()] ?: 0.0 }
+                VariantCombination(
+                    labels = labels,
+                    displayName = labels.joinToString("/"),
+                    price = explicit ?: (basePrice + delta).coerceAtLeast(0.0)
+                )
+            }
+        }
 
         if (groups.isNotEmpty()) {
             val optionsPerGroup = groups.map { group ->
@@ -144,13 +216,29 @@ object VariantCatalog {
         }
     }
 
-    /** A short one-line summary for product cards and pickers. */
+    /**
+     * A short one-line summary for product cards and pickers.
+     *
+     * When the field carries exact combination lines the summary lists those
+     * combinations, because that is the only honest answer once each first
+     * choice can carry its own second choices: a plain "Size: 32 / 34 / L / XL"
+     * would claim a Green size L that the shop does not sell.
+     */
     fun summary(raw: String): String {
+        val defined = parseDefinedCombos(raw)
+        if (defined.isNotEmpty()) {
+            val names = defined.map { (labels, _) -> labels.joinToString("/") }
+            val shown = names.take(SUMMARY_LIMIT)
+            val rest = names.size - shown.size
+            return shown.joinToString(" / ") + if (rest > 0) " +$rest more" else ""
+        }
         val groups = parseGroups(raw)
         if (groups.isNotEmpty()) {
             return groups.joinToString(" · ") { g -> "${g.name}: ${g.options.joinToString(" / ")}" }
         }
-        return lines(raw).joinToString(" · ") { line -> line.split("|")[0].trim().ifBlank { line } }
+        return lines(raw)
+            .filterNot { it.startsWith(COMBO_PREFIX) }
+            .joinToString(" · ") { line -> line.split("|")[0].trim().ifBlank { line } }
     }
 
     // ------------------------------------------------------------------
@@ -241,7 +329,7 @@ object VariantCatalog {
 
     /** Strips the characters the variants grammar uses as separators. */
     private fun cleanName(name: String): String =
-        name.replace(Regex("""[|/:;\n\r]"""), " ").replace(Regex("""\s+"""), " ").trim()
+        name.replace(Regex("""[|/:;=\n\r]"""), " ").replace(Regex("""\s+"""), " ").trim()
 
     private fun formatPrice(value: Double): String =
         if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
@@ -258,6 +346,9 @@ object VariantCatalog {
     /** Lines like `Basmati/Regular|1200` or a quoted `Basmati Regular|1200`. */
     private fun parseOverridePrices(raw: String): List<Pair<List<String>, Double>> =
         lines(raw).mapNotNull { line ->
+            // `=` lines are whole combinations; they are read by
+            // [parseDefinedCombos], not as a price override.
+            if (line.startsWith(COMBO_PREFIX)) return@mapNotNull null
             val bar = line.lastIndexOf('|')
             if (bar <= 0) return@mapNotNull null
             val path = line.substring(0, bar).trim()
@@ -290,6 +381,13 @@ object VariantCatalog {
         if (slash.size > 1 || slash.isNotEmpty()) return slash
         return raw.split(Regex("""\s+""")).map { it.trim() }.filter { it.isNotBlank() }
     }
+
+    /** Splits `Green/32` into ["Green", "32"]. */
+    private fun splitOptionPath(raw: String): List<String> =
+        splitNames(raw, Regex("""[/|]""")).ifEmpty { splitNames(raw, Regex("""\s+""")) }
+
+    private fun splitNames(raw: String, separator: Regex): List<String> =
+        raw.split(separator).map { it.trim() }.filter { it.isNotBlank() }
 
     /** Matches a price-override path to a combination, order-insensitive. */
     private fun matches(labels: List<String>, path: List<String>): Boolean {

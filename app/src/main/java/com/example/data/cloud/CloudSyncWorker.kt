@@ -21,7 +21,9 @@ class CloudSyncWorker(
     override suspend fun doWork(): Result {
         val repo = CloudSettingsRepository(applicationContext)
         val settings = repo.load()
-        if (!settings.providerEnabled) return Result.success()
+        // The provider allows the feature; the owner decides whether this
+        // phone actually uses it.
+        if (!settings.providerEnabled || !settings.ownerBackupEnabled) return Result.success()
 
         val mode = inputData.getString(KEY_MODE) ?: MODE_HOURLY
         val backupManager = CloudBackupManager(applicationContext)

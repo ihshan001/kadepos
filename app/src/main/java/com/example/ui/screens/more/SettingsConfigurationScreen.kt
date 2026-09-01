@@ -3,12 +3,10 @@ package com.example.ui.screens.more
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -34,18 +32,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.example.data.model.Permission
+import com.example.data.cloud.CloudSettings
 import com.example.data.model.BusinessProfileEntity
+import com.example.data.model.StaffRole
 import com.example.ui.theme.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.example.ui.util.ReceiptDesign
 import com.example.ui.util.ReceiptItemData
+import com.example.ui.components.AppTextField
+import com.example.ui.components.PhoneField
+import com.example.ui.util.CountryCodes
 import com.example.ui.util.CurrencyUtils
+import com.example.ui.util.PhoneValidator
 import com.example.ui.viewmodel.PosViewModel
+
+/**
+ * How many taps on the offline card are needed before a long-press opens the
+ * provider controls. Ten is deliberate: a customer handing the phone back will
+ * not stumble into it, and the technician who was told the gesture will.
+ */
+private const val PROVIDER_TAP_TARGET = 10
 
 /** A ready-to-fill CSV so the owner can prepare a catalogue on a computer. */
 private val PRODUCT_CSV_TEMPLATE = """
@@ -79,6 +93,12 @@ fun SettingsConfigurationScreen(
 
     val profile by viewModel.profile.collectAsState()
     val staffList by viewModel.staffList.collectAsState()
+    val currentPermissions by viewModel.permissions.collectAsState()
+    val cloudSettings by viewModel.cloudSettings.collectAsState()
+    // Cloud & Backup belongs to the people who own the shop's data. The
+    // provider has to allow it first, and only an Owner or Manager sees it.
+    val canManageCloud = cloudSettings.providerEnabled &&
+        (currentPermissions.role == StaffRole.OWNER || currentPermissions.role == StaffRole.MANAGER)
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedSection by remember { mutableStateOf(SettingsSection.ALL) }
@@ -86,8 +106,12 @@ fun SettingsConfigurationScreen(
     // Form state initialized from profile
     var name by remember(profile) { mutableStateOf(profile?.name.orEmpty()) }
     var businessType by remember(profile) { mutableStateOf(profile?.businessType ?: "Retail") }
-    var phone by remember(profile) { mutableStateOf(profile?.phone ?: "+94 77 123 4567") }
-    var address by remember(profile) { mutableStateOf(profile?.address ?: "123 Galle Road, Colombo") }
+    // The shop number is stored whole ("+94 777777700"); the editor splits it
+    // back into a country and a local part so the same rules as setup apply.
+    val savedPhone = remember(profile?.phone) { CountryCodes.split(profile?.phone.orEmpty()) }
+    var phoneCountry by remember(profile?.phone) { mutableStateOf(savedPhone.first) }
+    var phoneLocal by remember(profile?.phone) { mutableStateOf(savedPhone.second) }
+    var address by remember(profile) { mutableStateOf(profile?.address ?: "24 Market Street") }
     var currencySymbol by remember(profile) { mutableStateOf(profile?.currencySymbol ?: "Rs.") }
     var taxRate by remember { mutableStateOf("0.0") }
     var taxInclusive by remember { mutableStateOf(true) }
@@ -105,6 +129,9 @@ fun SettingsConfigurationScreen(
     var receiptShowItemCount by remember(profile) { mutableStateOf(profile?.receiptShowItemCount ?: true) }
     var receiptReturnNote by remember(profile) { mutableStateOf(profile?.receiptReturnNote.orEmpty()) }
     var printerName by remember(profile) { mutableStateOf(profile?.printerName.orEmpty()) }
+
+    /** The number as it is stored and printed on every bill. */
+    val fullPhone = CountryCodes.join(phoneCountry, phoneLocal)
 
     // Real catalogue rows drive the receipt preview.
     val allProducts by viewModel.products.collectAsState()
@@ -135,6 +162,9 @@ fun SettingsConfigurationScreen(
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
     var showFlushConfirmDialog by remember { mutableStateOf(false) }
     var showProviderCloudDialog by remember { mutableStateOf(false) }
+    // The provider unlock is a deliberate gesture, not a stray long-press:
+    // ten taps on the offline card, then press and hold.
+    var providerTaps by remember { mutableStateOf(0) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -148,7 +178,7 @@ fun SettingsConfigurationScreen(
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         out.write(csv.toByteArray(Charsets.UTF_8))
                     }
-                }.onFailure { viewModel.showMessage("Could not write the CSV file") }
+                }.onFailure { viewModel.showMessage("Could not save the list") }
             }
         }
     }
@@ -160,7 +190,7 @@ fun SettingsConfigurationScreen(
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(PRODUCT_CSV_TEMPLATE.toByteArray(Charsets.UTF_8))
                 }
-            }.onFailure { viewModel.showMessage("Could not write the CSV template") }
+            }.onFailure { viewModel.showMessage("Could not save the empty list") }
         }
     }
     val importLauncher = rememberLauncherForActivityResult(
@@ -204,7 +234,7 @@ fun SettingsConfigurationScreen(
                                 current.copy(
                                     name = name.trim(),
                                     businessType = businessType,
-                                    phone = phone.trim(),
+                                    phone = fullPhone,
                                     address = address.trim(),
                                     currencySymbol = currencySymbol,
                                     receiptFooter = receiptFooter.trim(),
@@ -337,14 +367,14 @@ fun SettingsConfigurationScreen(
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = phone,
-                            onValueChange = { phone = it },
-                            label = { Text("Phone Number (Sri Lanka default)") },
-                            leadingIcon = { Icon(Icons.Default.Phone, null, tint = BrandPrimary) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
+                        PhoneField(
+                            country = phoneCountry,
+                            localNumber = phoneLocal,
+                            onCountryChange = { phoneCountry = it },
+                            onNumberChange = { phoneLocal = it },
+                            error = PhoneValidator.errorFor(phoneCountry, phoneLocal),
+                            label = "Phone number",
+                            placeholder = "777777700"
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -514,15 +544,15 @@ fun SettingsConfigurationScreen(
                         ) {
                             CurrencyUtils.buildReceiptText(
                                 businessName = name,
-                                businessPhone = phone,
+                                businessPhone = fullPhone,
                                 businessAddress = address,
                                 invoiceNumber = "INV-000123",
                                 timestamp = System.currentTimeMillis(),
-                                cashierName = "Nimal",
+                                cashierName = "Morgan",
                                 customerName = "Walk-in",
                                 items = listOf(
-                                    ReceiptItemData("Sample item one", 2.0, 250.0, 500.0),
-                                    ReceiptItemData("Sample item two", 1.0, 180.0, 180.0)
+                                    ReceiptItemData("Sample item one", 2.0, 250.0, 500.0, "Kg"),
+                                    ReceiptItemData("Sample item two", 1.0, 180.0, 180.0, "Piece")
                                 ),
                                 subtotal = 680.0,
                                 discount = 30.0,
@@ -765,10 +795,20 @@ fun SettingsConfigurationScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
-                                    // Provider only: long-press the offline status
-                                    // block to open the hidden provider controls.
-                                    onClick = {},
-                                    onLongClick = { showProviderCloudDialog = true }
+                                    // Provider only: tap the block ten times and
+                                    // then press and hold to open the hidden
+                                    // provider controls. An accidental tap or a
+                                    // stray long-press can no longer reach it.
+                                    onClick = {
+                                        providerTaps = (providerTaps + 1)
+                                            .coerceAtMost(PROVIDER_TAP_TARGET)
+                                    },
+                                    onLongClick = {
+                                        if (providerTaps >= PROVIDER_TAP_TARGET) {
+                                            showProviderCloudDialog = true
+                                        }
+                                        providerTaps = 0
+                                    }
                                 )
                         ) {
                             Row(
@@ -786,7 +826,24 @@ fun SettingsConfigurationScreen(
                             }
                         }
 
+                        // Only the person who was told the gesture sees a
+                        // nudge, and only once they are clearly halfway there.
+                        if (providerTaps > 0 && providerTaps < PROVIDER_TAP_TARGET) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Keep tapping, then press and hold.",
+                                fontSize = 10.sp,
+                                color = TextMuted
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // --- Cloud & Backup: Owner / Manager only ---
+                        if (canManageCloud) {
+                            CloudAndBackupCard(viewModel = viewModel, settings = cloudSettings)
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
@@ -839,7 +896,7 @@ fun SettingsConfigurationScreen(
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Products CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Save list", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                             OutlinedButton(
                                 onClick = { importLauncher.launch("text/csv") },
@@ -848,13 +905,14 @@ fun SettingsConfigurationScreen(
                             ) {
                                 Icon(Icons.Default.Upload, contentDescription = null, Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Import CSV", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Load list", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "CSV columns: name, sellingPrice, costPrice, barcode, sku, category, subCategory, unit, currentStock, lowStockThreshold, tracked, favourite, variants. Tap Template for a ready-to-fill file, export your current list, or import one from your computer.",
+                            "Tap Template for a ready-to-fill file, Save list to keep a copy of " +
+                                "your items, or Load list to bring one back in.",
                             fontSize = 10.sp,
                             color = TextSecondary
                         )
@@ -898,7 +956,7 @@ fun SettingsConfigurationScreen(
                             current.copy(
                                 name = name.trim(),
                                 businessType = businessType,
-                                phone = phone.trim(),
+                                phone = fullPhone,
                                 address = address.trim(),
                                 currencySymbol = currencySymbol,
                                 receiptFooter = receiptFooter.trim(),
@@ -981,7 +1039,7 @@ fun SettingsConfigurationScreen(
                         ) {
                             Text(name.uppercase(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ReceiptText)
                             Text(address, fontSize = 10.sp, color = ReceiptText)
-                            Text(phone, fontSize = 10.sp, color = ReceiptText)
+                            Text(fullPhone, fontSize = 10.sp, color = ReceiptText)
                             Text("--------------------------------", fontSize = 10.sp, color = ReceiptDashed, fontFamily = FontFamily.Monospace)
                             // Preview uses this shop's real items, so what you
                             // see is what the printer will actually produce.
@@ -1117,6 +1175,117 @@ fun SettingsConfigurationScreen(
         )
     }
 }
+
+/**
+ * Cloud & Backup.
+ *
+ * Only shown once the provider has allowed the feature, and only to an Owner or
+ * a Manager. It answers the three questions a shop asks about a backup — is it
+ * on, when did it last run, and where is it going — and lets them connect their
+ * own Google mail or switch the copying off without calling anyone.
+ */
+@Composable
+private fun CloudAndBackupCard(
+    viewModel: PosViewModel,
+    settings: CloudSettings
+) {
+    var mail by remember(settings.ownerGmail) { mutableStateOf(settings.ownerGmail) }
+    val lastBackup = remember(settings.lastBackupAt) {
+        if (settings.lastBackupAt > 0L) formatBackupTime(settings.lastBackupAt) else null
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        shape = RoundedCornerShape(12.dp),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Cloud,
+                    contentDescription = null,
+                    tint = BrandPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Cloud & Backup", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                    Text(settings.statusLine(), fontSize = 11.sp, color = TextSecondary)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Last backup", fontSize = 11.sp, color = TextSecondary)
+                    Text(
+                        lastBackup ?: "Not yet",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (lastBackup == null) StatusAmber else TextPrimary
+                    )
+                }
+                Switch(
+                    checked = settings.ownerBackupEnabled,
+                    onCheckedChange = { viewModel.setOwnerBackupEnabled(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            AppTextField(
+                value = mail,
+                onValueChange = { mail = it },
+                label = "Your Google mail",
+                placeholder = "name@gmail.com",
+                keyboardType = KeyboardType.Email,
+                singleLine = true,
+                helper = if (mail.isNotBlank() && !mail.trim().equals(settings.ownerGmail, true)) {
+                    "Tap Save to use this address"
+                } else {
+                    null
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { viewModel.backupNow { } },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Back up now", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = { viewModel.setOwnerGmail(mail.trim()) },
+                    enabled = mail.trim().isNotBlank() && !mail.trim().equals(settings.ownerGmail, true),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Save mail", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            if (settings.lastError.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(settings.lastError, fontSize = 11.sp, color = StatusAmber)
+            }
+        }
+    }
+}
+
+private fun formatBackupTime(timestamp: Long): String =
+    SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(Date(timestamp))
 
 @Composable
 private fun SettingsCard(

@@ -123,7 +123,7 @@ class SetupValidationTest {
 
   @Test
   fun `denial messages name the role and stay readable`() {
-    val cashier = PermissionSet.of(StaffRole.CASHIER, staffId = 7L, staffName = "Nimal")
+    val cashier = PermissionSet.of(StaffRole.CASHIER, staffId = 7L, staffName = "Morgan")
     val message = cashier.denialMessage(Permission.REFUND_SALE)
     assertTrue(message.isNotBlank())
     assertFalse(message.contains("_"))
@@ -134,14 +134,14 @@ class SetupValidationTest {
   @Test
   fun `an owner can allow one extra thing without changing the role`() {
     val (extra, revoked) = PermissionOverrides.encode(setOf(Permission.CHANGE_PRICE), emptySet())
-    val nimal = PermissionSet.resolve(
-      role = StaffRole.CASHIER, staffId = 7L, staffName = "Nimal",
+    val person = PermissionSet.resolve(
+      role = StaffRole.CASHIER, staffId = 7L, staffName = "Morgan",
       extraCsv = extra, revokedCsv = revoked
     )
-    assertTrue("the extra permission should be granted", nimal.can(Permission.CHANGE_PRICE))
-    assertTrue("role defaults must survive", nimal.can(Permission.CREATE_SALE))
-    assertFalse("unrelated things stay blocked", nimal.can(Permission.MANAGE_SETTINGS))
-    assertTrue(nimal.isCustomised())
+    assertTrue("the extra permission should be granted", person.can(Permission.CHANGE_PRICE))
+    assertTrue("role defaults must survive", person.can(Permission.CREATE_SALE))
+    assertFalse("unrelated things stay blocked", person.can(Permission.MANAGE_SETTINGS))
+    assertTrue(person.isCustomised())
   }
 
   @Test
@@ -151,7 +151,7 @@ class SetupValidationTest {
       setOf(Permission.REFUND_SALE)
     )
     val person = PermissionSet.resolve(
-      role = StaffRole.MANAGER, staffId = 2L, staffName = "Kamal",
+      role = StaffRole.MANAGER, staffId = 2L, staffName = "Rowan",
       extraCsv = extra, revokedCsv = revoked
     )
     assertFalse("revoke must win so 'block this' is dependable", person.can(Permission.REFUND_SALE))
@@ -161,7 +161,7 @@ class SetupValidationTest {
   fun `a revoked role default is actually removed`() {
     val (extra, revoked) = PermissionOverrides.encode(emptySet(), setOf(Permission.VIEW_PROFIT))
     val manager = PermissionSet.resolve(
-      role = StaffRole.MANAGER, staffId = 3L, staffName = "Sunil",
+      role = StaffRole.MANAGER, staffId = 3L, staffName = "Blake",
       extraCsv = extra, revokedCsv = revoked
     )
     assertFalse(manager.can(Permission.VIEW_PROFIT))
@@ -222,10 +222,10 @@ class SetupValidationTest {
     CurrencyUtils.buildReceiptText(
       businessName = "Sunrise Stores",
       businessPhone = "0771234567",
-      businessAddress = "42 Main Street, Negombo",
+      businessAddress = "42 Market Street",
       invoiceNumber = "INV-000123",
       timestamp = 1_756_600_000_000L,
-      cashierName = "Nimal",
+      cashierName = "Morgan",
       customerName = "Walk-in",
       items = listOf(
         ReceiptItemData("Bread", 3.0, 120.0, 360.0),

@@ -32,6 +32,7 @@ class CloudSettingsRepository(context: Context) {
                 hourlySyncEnabled = o.optBoolean("hourlySyncEnabled", true),
                 dailyBackupEnabled = o.optBoolean("dailyBackupEnabled", true),
                 keepBackupDays = o.optInt("keepBackupDays", 30),
+                ownerBackupEnabled = o.optBoolean("ownerBackupEnabled", true),
                 ownerGmail = o.optString("ownerGmail", ""),
                 deviceName = o.optString("deviceName", ""),
                 lastBackupAt = o.optLong("lastBackupAt", 0L),
@@ -56,6 +57,7 @@ class CloudSettingsRepository(context: Context) {
             put("hourlySyncEnabled", settings.hourlySyncEnabled)
             put("dailyBackupEnabled", settings.dailyBackupEnabled)
             put("keepBackupDays", settings.keepBackupDays)
+            put("ownerBackupEnabled", settings.ownerBackupEnabled)
             put("ownerGmail", settings.ownerGmail)
             put("deviceName", settings.deviceName)
             put("lastBackupAt", settings.lastBackupAt)

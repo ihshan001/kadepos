@@ -149,7 +149,7 @@ data class NotificationEntity(
     val title: String,
     val body: String,
     val amount: Double = 0.0,
-    /** Who caused it, so "Nimal gave a 500 discount" reads properly. */
+    /** Who caused it, so "Morgan gave a 500 discount" reads properly. */
     val actorName: String = "",
     /** Invoice number, product name or similar, for jumping to the record. */
     val reference: String = "",

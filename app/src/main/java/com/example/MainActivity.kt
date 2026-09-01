@@ -32,11 +32,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
@@ -44,7 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
-import com.example.ui.theme.BrandOnPrimary
 import com.example.ui.theme.BrandPrimary
 import com.example.ui.theme.BrandSurface
 import com.example.ui.theme.BrandPrimaryDark
@@ -53,7 +49,6 @@ import com.example.ui.theme.StatusAmberBg
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -266,7 +261,10 @@ fun ArroPosApp(viewModel: PosViewModel) {
 
                 PosTab.SALES -> SalesHistoryScreen(viewModel = viewModel)
 
-                PosTab.PRODUCTS -> ProductsScreen(viewModel = viewModel)
+                PosTab.PRODUCTS -> ProductsScreen(
+                    viewModel = viewModel,
+                    onSellItem = { product -> viewModel.openVariantPickerOnSellTab(product.id) }
+                )
 
                 PosTab.INVENTORY -> InventoryScreen(viewModel = viewModel)
 
@@ -278,17 +276,17 @@ fun ArroPosApp(viewModel: PosViewModel) {
                 )
             }
 
-            // Transient confirmation banner pinned to the TOP so it never sits
-            // on the Charge bar. It fades on its own; errors are tap-to-dismiss.
+            // Warnings: a banner at the top that stays until it is read and
+            // tapped away. Real problems deserve the interruption.
             AnimatedVisibility(
-                visible = userMessage != null,
+                visible = userMessage != null && messageImportant,
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 },
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (messageImportant) StatusAmberBg else BrandSurface,
+                    color = StatusAmberBg,
                     shadowElevation = 6.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -301,26 +299,65 @@ fun ArroPosApp(viewModel: PosViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            if (messageImportant) Icons.Default.Warning else Icons.Default.CheckCircle,
+                            Icons.Default.Warning,
                             contentDescription = null,
-                            tint = if (messageImportant) StatusAmber else BrandPrimary,
+                            tint = StatusAmber,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             userMessage.orEmpty(),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (messageImportant) StatusAmber else BrandPrimaryDark,
+                            color = StatusAmber,
                             modifier = Modifier.weight(1f)
                         )
-                        if (messageImportant) {
-                            IconButton(
-                                onClick = { viewModel.clearMessage() },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = StatusAmber, modifier = Modifier.size(14.dp))
-                            }
+                        IconButton(
+                            onClick = { viewModel.clearMessage() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Dismiss",
+                                tint = StatusAmber,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
+                    }
+                }
+            }
+
+            // Confirmations ("Added Biryani"): a small pill around the middle
+            // of the screen that clears itself in about a second. It used to
+            // sit at the very top, where nobody looks while tapping.
+            AnimatedVisibility(
+                visible = userMessage != null && !messageImportant,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = BrandSurface,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.clickable { viewModel.clearMessage() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = BrandPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            userMessage.orEmpty(),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandPrimaryDark
+                        )
                     }
                 }
             }

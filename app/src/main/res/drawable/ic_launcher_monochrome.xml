@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon (Android 13+) outline of the Arro-POS mark: a till bag with a
+  receipt rising out of it. Single colour, drawn inside the adaptive icon safe
+  zone (the middle 66dp of the 108dp canvas).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Receipt sheet -->
+    <path
+        android:pathData="M44,26 L64,26 Q67,26 67,29 L67,52 L41,52 L41,29 Q41,26 44,26 Z"
+        android:fillColor="#FF000000" />
+    <path android:pathData="M41,52 L44.5,58 L48,52 Z" android:fillColor="#FF000000" />
+    <path android:pathData="M48,52 L51.5,58 L55,52 Z" android:fillColor="#FF000000" />
+    <path android:pathData="M55,52 L58.5,58 L62,52 Z" android:fillColor="#FF000000" />
+    <path android:pathData="M62,52 L65.5,58 L67,52 Z" android:fillColor="#FF000000" />
+
+    <!-- Bag body -->
+    <path
+        android:pathData="M34,52 L74,52 Q77,52 77,55 L77,80 Q77,83 74,83 L34,83 Q31,83 31,80 L31,55 Q31,52 34,52 Z"
+        android:fillColor="#FF000000" />
+    <!-- Bag handle -->
+    <path
+        android:pathData="M46,52 L46,46 Q46,42 50,42 L58,42 Q62,42 62,46 L62,52 L58,52 L58,47 Q58,46 57,46 L51,46 Q50,46 50,47 L50,52 Z"
+        android:fillColor="#FF000000" />
+</vector>

@@ -9,7 +9,6 @@ import com.example.data.cloud.CloudSettingsRepository
 import com.example.data.cloud.CloudSyncScheduler
 import com.example.data.db.PosDatabase
 import com.example.data.model.BusinessProfileEntity
-import com.example.data.model.CashMovementEntity
 import com.example.data.model.CashRegisterShiftEntity
 import com.example.data.model.CustomerEntity
 import com.example.data.model.ExpenseEntity
@@ -243,6 +242,10 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _moreDestination = MutableStateFlow<MoreDestination?>(null)
     val moreDestination = _moreDestination.asStateFlow()
+
+    /** An option item the Items tab asked the Sell tab to open. */
+    private val _pendingVariantProductId = MutableStateFlow<Long?>(null)
+    val pendingVariantProductId = _pendingVariantProductId.asStateFlow()
 
     // Onboarding step (0 = not in onboarding, 1..10 = onboarding steps)
     private val _onboardingStep = MutableStateFlow(0)
@@ -549,6 +552,23 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         _moreDestination.value = null
     }
 
+    /**
+     * An item that comes in options can only be sold from the Sell tab, where
+     * each option shows its own price and what is left of it. This moves the
+     * owner there and leaves the option picker open on the item they tapped,
+     * rather than telling them to go and look for it themselves.
+     */
+    fun openVariantPickerOnSellTab(productId: Long) {
+        _pendingVariantProductId.value = productId
+        _selectedTab.value = PosTab.SELL
+        _moreDestination.value = null
+    }
+
+    /** The Sell tab has taken over the request; drop it so it fires once. */
+    fun consumePendingVariantProduct() {
+        _pendingVariantProductId.value = null
+    }
+
     fun navigateMore(dest: MoreDestination) {
         _moreDestination.value = dest
     }
@@ -562,10 +582,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * A quick confirmation ("Added Biriyani"). Shows for a short moment then
-     * fades; rapid consecutive adds restart the timer instead of stacking.
+     * A quick confirmation ("Added …"). Appears in the middle of the screen and
+     * clears after about a second, so it never sits in the way of the next tap;
+     * rapid consecutive adds restart the timer instead of stacking.
      */
-    fun showMessage(msg: String, durationMs: Long = 1400L) {
+    fun showMessage(msg: String, durationMs: Long = 1000L) {
         _messageImportant.value = false
         _userMessage.value = msg
         messageJob?.cancel()
@@ -983,7 +1004,14 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         isTracked: Boolean,
         isFavourite: Boolean,
         subCategory: String = "",
-        variants: String = ""
+        variants: String = "",
+        /**
+         * Opening count per purchasable combination, keyed by
+         * [VariantCatalog.comboKey]. Comes straight from the combination table
+         * on the Add/Edit product screen, so "Green 40: 2" is stocked the
+         * moment the item is saved instead of starting every size at zero.
+         */
+        comboStock: Map<String, Double> = emptyMap()
     ) {
         if (!allow(Permission.MANAGE_PRODUCTS)) return
         viewModelScope.launch {
@@ -1019,7 +1047,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     repository.updateProduct(updated)
                     // Rewrite the child lines while keeping their stock history.
                     // Options removed from the parent are archived, not deleted.
-                    reconcileVariantChildren(id, updated, combos)
+                    reconcileVariantChildren(id, updated, combos, comboStock)
 
                     // Changing the stock figure here is a recount, so it goes
                     // through the ledger like any other correction rather than
@@ -1068,10 +1096,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                             variants = "",
                             parentProductId = parentId,
                             isVariant = true,
-                            // A variant starts at zero so it is stocked
-                            // separately; the parent's opening stock is not
-                            // silently shared across every size/option.
-                            currentStock = 0.0,
+                            // Stock is counted per combination, exactly as the
+                            // owner typed it in the combination table. The
+                            // parent's own opening stock is never silently
+                            // shared across every size or option.
+                            currentStock = comboStock[VariantCatalog.comboKey(combo.labels)] ?: 0.0,
                             updatedAt = System.currentTimeMillis()
                         )
                         repository.insertProductWithOpeningStock(child)
@@ -1093,7 +1122,8 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun reconcileVariantChildren(
         parentId: Long,
         parent: ProductEntity,
-        combos: List<com.example.data.model.VariantCombination>
+        combos: List<com.example.data.model.VariantCombination>,
+        comboStock: Map<String, Double> = emptyMap()
     ) {
         val existingChildren = repository.getVariantChildren(parentId)
         val desiredNames = combos.map { VariantCatalog.childName(parent.name, it) }.toSet()
@@ -1101,7 +1131,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         combos.forEach { combo ->
             val name = VariantCatalog.childName(parent.name, combo)
             val existing = existingChildren.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            val wantedStock = comboStock[VariantCatalog.comboKey(combo.labels)]
             if (existing != null) {
+                val counted = wantedStock ?: existing.currentStock
                 repository.updateProduct(
                     existing.copy(
                         name = name,
@@ -1112,9 +1144,20 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                         unit = parent.unit,
                         lowStockThreshold = parent.lowStockThreshold,
                         isTracked = parent.isTracked,
+                        currentStock = counted,
                         variants = ""
                     )
                 )
+                // A changed count is a recount, so it goes through the ledger
+                // like any other correction instead of overwriting the figure.
+                if (wantedStock != null && kotlin.math.abs(wantedStock - existing.currentStock) > 0.0001) {
+                    repository.recordStockAdjustment(
+                        productId = existing.id,
+                        newCount = wantedStock,
+                        reason = "COUNT",
+                        note = "Counted while editing the item"
+                    )
+                }
             } else {
                 val child = parent.copy(
                     id = 0L,
@@ -1123,7 +1166,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     variants = "",
                     parentProductId = parentId,
                     isVariant = true,
-                    currentStock = 0.0,
+                    currentStock = wantedStock ?: 0.0,
                     updatedAt = System.currentTimeMillis()
                 )
                 repository.insertProductWithOpeningStock(child)
@@ -1141,6 +1184,31 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.archiveProduct(productId)
             showMessage("Product archived")
+        }
+    }
+
+    /**
+     * Removes several items at once, with the stock lines underneath them.
+     *
+     * A starter catalogue is only a guess: the shop picks a type and gets a
+     * list of items, some of which it has never stocked and never will.
+     * Removing those one at a time turns a five minute setup into an
+     * afternoon, which is why the Items tab can select a batch.
+     *
+     * They are archived rather than deleted, exactly as editing an item's
+     * options already does, because past bills still refer to them.
+     */
+    fun archiveProducts(productIds: List<Long>) {
+        val ids = productIds.distinct().filter { it > 0 }
+        if (ids.isEmpty()) return
+        if (!allow(Permission.MANAGE_PRODUCTS)) return
+        viewModelScope.launch {
+            ids.forEach { id ->
+                repository.getVariantChildren(id)
+                    .forEach { child -> repository.archiveProduct(child.id) }
+                repository.archiveProduct(id)
+            }
+            showMessage(if (ids.size == 1) "Removed 1 item" else "Removed ${ids.size} items")
         }
     }
 
@@ -1300,34 +1368,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deletePurchase(purchaseId)
             showMessage("Purchase order deleted")
-        }
-    }
-
-    fun createPurchase(
-        supplier: SupplierEntity?,
-        invoiceNumber: String,
-        items: List<PurchaseItemEntity>,
-        paidAmount: Double,
-        notes: String
-    ) {
-        if (!allow(Permission.MANAGE_SUPPLIERS)) return
-        viewModelScope.launch {
-            val total = items.sumOf { it.lineTotal }
-            val due = (total - paidAmount).coerceAtLeast(0.0)
-            val purchase = PurchaseEntity(
-                supplierId = supplier?.id,
-                supplierName = supplier?.name ?: "Local Supplier",
-                invoiceNumber = invoiceNumber.ifBlank { "PO-${(1000..9999).random()}" },
-                timestamp = System.currentTimeMillis(),
-                totalAmount = total,
-                paidAmount = paidAmount,
-                dueAmount = due,
-                paymentStatus = if (due <= 0) "PAID" else if (paidAmount > 0) "PARTIAL" else "DUE",
-                itemsCount = items.size,
-                notes = notes
-            )
-            repository.insertPurchase(purchase, items)
-            showMessage("Purchase recorded. Stock updated automatically.")
         }
     }
 
@@ -1843,44 +1883,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
      * Installs the 50 starter items for [shopTypeKey] and removes anything
      * belonging to a different shop type, so categories can never overlap.
      */
-    fun installShopCatalog(shopTypeKey: String) {
-        if (!allow(Permission.MANAGE_PRODUCTS)) return
-        viewModelScope.launch {
-            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
-            repository.installShopTypeCatalog(preset.key, preset.products)
-            audit("CATALOG", "Loaded starter items for ${preset.displayName}")
-            showMessage("${preset.products.size} ${preset.displayName} items are ready")
-        }
-    }
-
-    /** Removes starter items without touching anything the owner added. */
-    fun clearStarterCatalog() {
-        if (!allow(Permission.MANAGE_PRODUCTS)) return
-        viewModelScope.launch {
-            repository.clearAllProducts()
-            audit("CATALOG", "Cleared the product list")
-            showMessage("Product list cleared")
-        }
-    }
-
-    /** Switching shop type wipes the old catalogue so nothing overlaps. */
-    fun changeShopType(shopTypeKey: String, loadStarterItems: Boolean) {
-        if (!allow(Permission.MANAGE_SETTINGS)) return
-        viewModelScope.launch {
-            val preset = ProductCatalogPresets.findShopType(shopTypeKey) ?: return@launch
-            val current = repository.getProfileSync() ?: BusinessProfileEntity()
-            repository.saveProfile(
-                current.copy(shopTypeKey = preset.key, businessType = preset.businessType)
-            )
-            if (loadStarterItems) {
-                repository.installShopTypeCatalog(preset.key, preset.products)
-            } else {
-                repository.pruneProductsOutsideShopType(preset.key)
-            }
-            audit("CATALOG", "Switched shop type to ${preset.displayName}")
-            showMessage("Now set up for ${preset.displayName}")
-        }
-    }
 
     fun deleteProduct(productId: Long) {
         if (!allow(Permission.DELETE_RECORDS)) return
@@ -1997,11 +1999,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Restarts the setup wizard from the settings screen. */
-    fun restartSetup() {
-        _onboardingStep.value = 1
-    }
-
     /**
      * Turns a solo shop into a team shop without losing the owner. This is the
      * path behind More → My team → “I have staff now” when the owner chose
@@ -2108,7 +2105,8 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshCloud() {
         val settings = cloudRepo.load()
         _cloudSettings.value = settings
-        if (!settings.providerEnabled) {
+        // The provider switch and the owner's own switch must both be on.
+        if (!settings.providerEnabled || !settings.ownerBackupEnabled) {
             CloudSyncScheduler.cancel(appContext)
             return
         }
@@ -2151,6 +2149,10 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         val settings = _cloudSettings.value
         if (!settings.providerEnabled) {
             showMessage("Ask your POS provider to activate cloud backup first")
+            return
+        }
+        if (!settings.ownerBackupEnabled) {
+            showMessage("Backup is switched off on this phone. Turn it on first.")
             return
         }
         if (settings.ownerGmail.isBlank()) {
@@ -2226,6 +2228,27 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             audit("SETTINGS", "Provider changed cloud backup settings", 0.0)
         }
         return true
+    }
+
+    /**
+     * The shop's own switch, under Cloud & Backup. The provider decides whether
+     * this device is allowed to back up; the owner decides whether it does.
+     */
+    fun setOwnerBackupEnabled(enabled: Boolean) {
+        val updated = cloudRepo.update { it.copy(ownerBackupEnabled = enabled) }
+        _cloudSettings.value = updated
+        if (updated.providerEnabled && updated.ownerBackupEnabled) {
+            if (updated.hourlySyncEnabled) CloudSyncScheduler.schedule(appContext)
+            if (updated.dailyBackupEnabled) CloudSyncScheduler.scheduleDailyBackup(appContext)
+        } else {
+            // Never cancel a manual sync that is already queued.
+            CloudSyncScheduler.cancelHourly(appContext)
+            CloudSyncScheduler.cancelDaily(appContext)
+        }
+        showMessage(if (enabled) "Backup switched on" else "Backup switched off on this phone")
+        viewModelScope.launch {
+            audit("SETTINGS", "Turned cloud backup ${if (enabled) "on" else "off"}", 0.0)
+        }
     }
 
     /** Unlocks the provider screen with the company access code + Gmail. */

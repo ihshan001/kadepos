@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,7 +25,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -39,8 +39,13 @@ import com.example.data.model.ProductCatalogPresets
 import com.example.ui.components.ChoiceCard
 import com.example.ui.components.HintCard
 import com.example.ui.components.HintTone
+import com.example.ui.components.PhoneField
+import com.example.ui.components.keyboardPadding
 import com.example.ui.components.PrimaryActionButton
 import com.example.ui.theme.*
+import com.example.ui.util.Country
+import com.example.ui.util.CountryCodes
+import com.example.ui.util.PhoneValidator
 
 /**
  * The setup wizard.
@@ -57,7 +62,9 @@ private const val TOTAL_STEPS = 7
 data class SetupDraft(
     val businessName: String = "",
     val ownerName: String = "",
+    /** The local part only — the dial code lives in [phoneCountryCode]. */
     val phone: String = "",
+    val phoneCountryCode: String = CountryCodes.default.dialCode,
     val address: String = "",
     val shopTypeKey: String = "",
     val loadStarterItems: Boolean = true,
@@ -81,12 +88,17 @@ fun OnboardingFlow(
     onFinish: (BusinessProfileEntity, SetupDraft) -> Unit,
     onOpenPrinterSetup: () -> Unit = {}
 ) {
+    // A number saved before the country picker existed was stored whole
+    // ("0771234567"); split it so the wizard shows the same thing either way.
+    val savedCountryAndLocal = remember(profile.phone) { CountryCodes.split(profile.phone) }
+
     var draft by rememberSaveable(stateSaver = SetupDraftSaver) {
         mutableStateOf(
             SetupDraft(
                 businessName = profile.name,
                 ownerName = profile.activeStaffName,
-                phone = profile.phone,
+                phone = savedCountryAndLocal.second,
+                phoneCountryCode = savedCountryAndLocal.first.dialCode,
                 address = profile.address,
                 shopTypeKey = profile.shopTypeKey
             )
@@ -146,7 +158,11 @@ fun OnboardingFlow(
                     onFinish(
                         profile.copy(
                             name = draft.businessName.trim(),
-                            phone = draft.phone.trim(),
+                            phone = CountryCodes.join(
+                                CountryCodes.findByDialCode(draft.phoneCountryCode)
+                                    ?: CountryCodes.default,
+                                draft.phone.trim()
+                            ),
                             address = draft.address.trim(),
                             shopTypeKey = draft.shopTypeKey,
                             trackStock = draft.trackStock == true,
@@ -299,9 +315,10 @@ private fun ShopDetailsStep(
 ) {
     var touched by rememberSaveable { mutableStateOf(false) }
 
+    val country = CountryCodes.findByDialCode(draft.phoneCountryCode) ?: CountryCodes.default
     val nameError = validateShopName(draft.businessName)
     val ownerError = validateOwnerName(draft.ownerName)
-    val phoneError = validatePhone(draft.phone)
+    val phoneError = validatePhone(country, draft.phone)
     val addressError = validateAddress(draft.address)
     val allValid = listOf(nameError, ownerError, phoneError, addressError).all { it == null }
 
@@ -315,13 +332,14 @@ private fun ShopDetailsStep(
         onContinue = { touched = true; if (allValid) onNext() },
         onBlockedAttempt = { touched = true },
         testTag = "continue_details"
-    ) {
+    ) { scroll ->
         SetupField(
             label = "Shop name",
             value = draft.businessName,
             onValueChange = { onChange(draft.copy(businessName = it)) },
             placeholder = "e.g. Sunrise Grocery",
             icon = Icons.Default.Storefront,
+            scrollState = scroll,
             error = if (touched) nameError else null,
             testTag = "shop_name_input"
         )
@@ -330,22 +348,25 @@ private fun ShopDetailsStep(
             label = "Your name",
             value = draft.ownerName,
             onValueChange = { onChange(draft.copy(ownerName = it)) },
-            placeholder = "e.g. Kasun Perera",
+            placeholder = "e.g. Morgan Blake",
             icon = Icons.Default.Person,
+            keyboardType = KeyboardType.Text,
+            scrollState = scroll,
             error = if (touched) ownerError else null,
             testTag = "owner_name_input"
         )
 
-        SetupField(
-            label = "Phone number",
-            value = draft.phone,
-            onValueChange = { input ->
-                onChange(draft.copy(phone = input.filter { it.isDigit() || it in " +-" }))
-            },
-            placeholder = "077 123 4567",
-            icon = Icons.Default.Phone,
-            keyboardType = KeyboardType.Phone,
+        // The country is picked, never typed: the dial code then sits in front
+        // of the number so only the local part is entered.
+        PhoneField(
+            country = country,
+            localNumber = draft.phone,
+            onCountryChange = { onChange(draft.copy(phoneCountryCode = it.dialCode)) },
+            onNumberChange = { onChange(draft.copy(phone = it)) },
             error = if (touched) phoneError else null,
+            label = "Phone number",
+            placeholder = "777777700",
+            scrollState = scroll,
             testTag = "phone_input"
         )
 
@@ -353,9 +374,10 @@ private fun ShopDetailsStep(
             label = "Shop address",
             value = draft.address,
             onValueChange = { onChange(draft.copy(address = it)) },
-            placeholder = "e.g. 24 Main Street, Negombo",
+            placeholder = "e.g. 24 Market Street",
             icon = Icons.Default.LocationOn,
             singleLine = false,
+            scrollState = scroll,
             error = if (touched) addressError else null,
             testTag = "address_input"
         )
@@ -449,6 +471,11 @@ private fun shopTypeIcon(name: String): ImageVector = when (name) {
     "menu_book" -> Icons.Default.MenuBook
     "content_cut" -> Icons.Default.ContentCut
     "build" -> Icons.Default.Build
+    "local_florist" -> Icons.Default.LocalFlorist
+    "do_not_step" -> Icons.Default.Hiking
+    "hardware" -> Icons.Default.Hardware
+    "toys" -> Icons.Default.Toys
+    "sports_soccer" -> Icons.Default.SportsSoccer
     else -> Icons.Default.Storefront
 }
 
@@ -577,7 +604,7 @@ private fun TeamStep(
         onContinue = { touched = true; if (canContinue) onNext() },
         onBlockedAttempt = { touched = true },
         testTag = "continue_team"
-    ) {
+    ) { scroll ->
         ChoiceCard(
             title = "Just me",
             subtitle = "No sign-in screen — the app opens straight into selling",
@@ -609,6 +636,7 @@ private fun TeamStep(
                 placeholder = "____",
                 icon = Icons.Default.Lock,
                 keyboardType = KeyboardType.NumberPassword,
+                scrollState = scroll,
                 isSecret = true,
                 error = if (touched) pinError else null,
                 testTag = "owner_pin_input"
@@ -621,6 +649,7 @@ private fun TeamStep(
                 placeholder = "____",
                 icon = Icons.Default.LockReset,
                 keyboardType = KeyboardType.NumberPassword,
+                scrollState = scroll,
                 isSecret = true,
                 error = if (touched) confirmError else null,
                 testTag = "owner_pin_confirm_input"
@@ -868,8 +897,9 @@ private fun StepScaffold(
     onContinue: () -> Unit,
     testTag: String,
     onBlockedAttempt: () -> Unit = {},
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.(ScrollState) -> Unit
 ) {
+    val scrollState = rememberScrollState()
     Scaffold(
         topBar = { StepTopBar(step = step, onBack = onBack) },
         containerColor = LightBackground,
@@ -907,7 +937,9 @@ private fun StepScaffold(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState)
+                // Keep the bottom of the form clear of the keyboard.
+                .keyboardPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
@@ -920,7 +952,7 @@ private fun StepScaffold(
             )
             Text(subtitle, fontSize = 14.sp, color = TextSecondary, lineHeight = 20.sp)
             Spacer(modifier = Modifier.height(2.dp))
-            content()
+            content(scrollState)
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
@@ -986,6 +1018,9 @@ private fun SetupField(
     singleLine: Boolean = true,
     isSecret: Boolean = false
 ) {
+    // Secrets get an eye button: a four digit PIN typed on a phone in a busy
+    // shop deserves to be checked before it is saved.
+    var revealed by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(modifier = Modifier.height(6.dp))
@@ -1000,8 +1035,17 @@ private fun SetupField(
             placeholder = { Text(placeholder, color = TextMuted, fontSize = 15.sp) },
             leadingIcon = { Icon(icon, contentDescription = null, tint = BrandPrimary) },
             trailingIcon = {
-                if (error == null && value.isNotBlank()) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
+                when {
+                    isSecret -> IconButton(onClick = { revealed = !revealed }) {
+                        Icon(
+                            imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (revealed) "Hide" else "Show",
+                            tint = TextSecondary
+                        )
+                    }
+                    error == null && value.isNotBlank() -> {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen)
+                    }
                 }
             },
             isError = error != null,
@@ -1011,7 +1055,11 @@ private fun SetupField(
                 null
             },
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            visualTransformation = if (isSecret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            visualTransformation = if (isSecret && !revealed) {
+                PasswordVisualTransformation()
+            } else {
+                androidx.compose.ui.text.input.VisualTransformation.None
+            },
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 2,
             colors = OutlinedTextFieldDefaults.colors(
@@ -1034,21 +1082,31 @@ fun validateShopName(value: String): String? = when {
     else -> null
 }
 
-fun validateOwnerName(value: String): String? = when {
-    value.isBlank() -> "Enter your name"
-    value.trim().length < 2 -> "That looks too short"
-    else -> null
-}
-
-fun validatePhone(value: String): String? {
-    val digits = value.filter(Char::isDigit)
+/**
+ * A name is letters and spaces only. Digits in a person's name are almost
+ * always a phone number typed into the wrong box, and catching it here saves a
+ * receipt that goes out with the wrong thing printed on it.
+ */
+fun validateOwnerName(value: String): String? {
+    val trimmed = value.trim()
     return when {
-        digits.isEmpty() -> "Enter a phone number"
-        digits.length < 9 -> "A phone number needs at least 9 digits"
-        digits.length > 15 -> "That's too long for a phone number"
+        trimmed.isBlank() -> "Enter your name"
+        trimmed.length < 2 -> "That looks too short"
+        trimmed.any { it.isDigit() } -> "A name cannot contain numbers"
+        trimmed.any { char -> !char.isLetter() && !char.isWhitespace() && char !in "-'." } ->
+            "Use letters and spaces only"
         else -> null
     }
 }
+
+/**
+ * The local part of a phone number, checked against the chosen country.
+ *
+ * Two mistakes matter in a shop: keeping the leading 0 the network prints at
+ * home, and stopping halfway through. Both are named in the error.
+ */
+fun validatePhone(country: Country, local: String): String? =
+    PhoneValidator.errorFor(country, local)
 
 fun validateAddress(value: String): String? = when {
     value.isBlank() -> "Enter your shop address"
@@ -1071,7 +1129,8 @@ private val SetupDraftSaver = androidx.compose.runtime.saveable.listSaver<SetupD
             it.businessName, it.ownerName, it.phone, it.address, it.shopTypeKey,
             it.loadStarterItems, it.trackStock, it.creditEnabled, it.hasStaff,
             it.ownerPin, it.ownerPinConfirm, it.usesPrinter, it.paperWidth,
-            it.language, it.receiptFooter, it.cashDrawerEnabled
+            it.language, it.receiptFooter, it.cashDrawerEnabled,
+            it.phoneCountryCode
         )
     },
     restore = {
@@ -1091,7 +1150,8 @@ private val SetupDraftSaver = androidx.compose.runtime.saveable.listSaver<SetupD
             paperWidth = it[12] as String,
             language = it[13] as String,
             receiptFooter = it[14] as String,
-            cashDrawerEnabled = it[15] as Boolean?
+            cashDrawerEnabled = it[15] as Boolean?,
+            phoneCountryCode = (it.getOrNull(16) as? String) ?: CountryCodes.default.dialCode
         )
     }
 )
