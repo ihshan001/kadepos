@@ -264,8 +264,29 @@ private fun loadForm(product: ProductEntity?, children: List<ProductEntity>): Pr
     )
 }
 
-private fun buildRequest(form: ProductForm, product: ProductEntity?): ProductSaveRequest =
-    ProductSaveRequest(
+/**
+ * Nothing should ever go on sale for zero because a box was left empty: a
+ * price that was never filled in falls back to the starting price.
+ */
+private fun ProductOptionsDraft.withFallbackPrice(basePrice: Double): ProductOptionsDraft =
+    copy(
+        options = options.map { option ->
+            option.copy(
+                price = if (option.price > 0.0) option.price else basePrice,
+                subOptions = option.subOptions.map { sub ->
+                    sub.copy(price = if (sub.price > 0.0) sub.price else basePrice)
+                }
+            )
+        }
+    )
+
+private fun buildRequest(form: ProductForm, product: ProductEntity?): ProductSaveRequest {
+    val options = if (form.priceValue > 0.0) {
+        form.options.withFallbackPrice(form.priceValue)
+    } else {
+        form.options
+    }
+    return ProductSaveRequest(
         id = product?.id ?: 0L,
         name = form.name.trim(),
         sellingPrice = form.priceValue,
@@ -279,9 +300,10 @@ private fun buildRequest(form: ProductForm, product: ProductEntity?): ProductSav
         lowStock = form.lowStockValue,
         isTracked = form.tracked,
         isFavourite = form.favourite,
-        variants = ProductOptions.encode(form.options),
-        comboStock = ProductOptions.combinationStock(form.options)
+        variants = ProductOptions.encode(options),
+        comboStock = ProductOptions.combinationStock(options)
     )
+}
 
 private fun Double.money(): String =
     if (this == this.toLong().toDouble()) this.toLong().toString() else this.toString()
