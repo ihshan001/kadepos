@@ -261,7 +261,10 @@ fun ArroPosApp(viewModel: PosViewModel) {
 
                 PosTab.SALES -> SalesHistoryScreen(viewModel = viewModel)
 
-                PosTab.PRODUCTS -> ProductsScreen(viewModel = viewModel)
+                PosTab.PRODUCTS -> ProductsScreen(
+                    viewModel = viewModel,
+                    onSellItem = { product -> viewModel.openVariantPickerOnSellTab(product.id) }
+                )
 
                 PosTab.INVENTORY -> InventoryScreen(viewModel = viewModel)
 

@@ -146,6 +146,18 @@ fun SellScreen(
     var unknownBarcode by remember { mutableStateOf<String?>(null) }
     var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
 
+    // The Items tab sends an item with options here rather than leaving the
+    // owner to find it again; open its picker as soon as we arrive.
+    val pendingVariantProductId by viewModel.pendingVariantProductId.collectAsState()
+    LaunchedEffect(pendingVariantProductId, products) {
+        val wanted = pendingVariantProductId ?: return@LaunchedEffect
+        val product = products.firstOrNull { it.id == wanted }
+        if (product != null && hasVariantOptions(products, product)) {
+            variantPickerProduct = product
+        }
+        viewModel.consumePendingVariantProduct()
+    }
+
     val permissions by viewModel.permissions.collectAsState()
 
     val lastCompletedSale by viewModel.lastCompletedSale.collectAsState()
@@ -2157,128 +2169,6 @@ fun CameraScannerDialog(
 // -------------------------------------------------------------------------------------
 // Quick Item Dialog
 // -------------------------------------------------------------------------------------
-@Composable
-fun QuickItemDialog(
-    prefillBarcode: String? = null,
-    onAdd: (name: String, price: Double, qty: Double, discount: Double, saveProduct: Boolean) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var priceText by remember { mutableStateOf("") }
-    var qty by remember { mutableStateOf(1.0) }
-    var saveAsPermanent by remember { mutableStateOf(false) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("QUICK ITEM", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
-                }
-
-                if (prefillBarcode != null) {
-                    Text(
-                        "Barcode $prefillBarcode is not in your items yet. Add it here.",
-                        fontSize = 13.sp,
-                        color = TextSecondary
-                    )
-                } else {
-                    Text("What are you selling?", fontSize = 13.sp, color = TextSecondary)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Item Name / Description") },
-                    placeholder = { Text("Item name") },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Medium),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
-                    ),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = priceText,
-                    onValueChange = { priceText = it },
-                    label = { Text("Price (Rs.)") },
-                    leadingIcon = { Text("Rs.", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp), color = Color.Black) },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Quantity", fontWeight = FontWeight.SemiBold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { if (qty > 1) qty -= 1.0 }) {
-                            Icon(Icons.Default.Remove, contentDescription = null)
-                        }
-                        Text("${qty.toInt()}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        IconButton(onClick = { qty += 1.0 }) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(checked = saveAsPermanent, onCheckedChange = { saveAsPermanent = it })
-                    Text("Also save to my items", fontSize = 13.sp)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = {
-                        val price = priceText.toDoubleOrNull() ?: 0.0
-                        if (price > 0) {
-                            onAdd(name.ifBlank { "Quick Item" }, price, qty, 0.0, saveAsPermanent)
-                        }
-                    },
-                    enabled = priceText.toDoubleOrNull() != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text("ADD TO BILL", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
 
 // -------------------------------------------------------------------------------------
 // Quick Sale Dialog

@@ -49,7 +49,9 @@ private fun parentOfVariant(products: List<ProductEntity>, child: ProductEntity)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductsScreen(
-    viewModel: PosViewModel
+    viewModel: PosViewModel,
+    /** Sell an item that comes in options: opens its picker on the Sell tab. */
+    onSellItem: (ProductEntity) -> Unit
 ) {
     // The Items tab is hidden for people without this permission, but a
     // hidden tab is not a lock. This is the lock.
@@ -360,11 +362,10 @@ fun ProductsScreen(
                             onAddToCart = {
                                 // An item with options has to be chosen from
                                 // the selling screen, where each option shows
-                                // its own price and what is left of it.
+                                // its own price and what is left of it — so
+                                // go there with its picker already open.
                                 if (product.variants.isNotBlank()) {
-                                    viewModel.showMessage(
-                                        "Choose ${product.name} from the Sell tab to pick an option"
-                                    )
+                                    onSellItem(product)
                                 } else {
                                     viewModel.addToCart(product)
                                 }

@@ -244,6 +244,10 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     private val _moreDestination = MutableStateFlow<MoreDestination?>(null)
     val moreDestination = _moreDestination.asStateFlow()
 
+    /** An option item the Items tab asked the Sell tab to open. */
+    private val _pendingVariantProductId = MutableStateFlow<Long?>(null)
+    val pendingVariantProductId = _pendingVariantProductId.asStateFlow()
+
     // Onboarding step (0 = not in onboarding, 1..10 = onboarding steps)
     private val _onboardingStep = MutableStateFlow(0)
     val onboardingStep = _onboardingStep.asStateFlow()
@@ -547,6 +551,23 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     fun selectTab(tab: PosTab) {
         _selectedTab.value = tab
         _moreDestination.value = null
+    }
+
+    /**
+     * An item that comes in options can only be sold from the Sell tab, where
+     * each option shows its own price and what is left of it. This moves the
+     * owner there and leaves the option picker open on the item they tapped,
+     * rather than telling them to go and look for it themselves.
+     */
+    fun openVariantPickerOnSellTab(productId: Long) {
+        _pendingVariantProductId.value = productId
+        _selectedTab.value = PosTab.SELL
+        _moreDestination.value = null
+    }
+
+    /** The Sell tab has taken over the request; drop it so it fires once. */
+    fun consumePendingVariantProduct() {
+        _pendingVariantProductId.value = null
     }
 
     fun navigateMore(dest: MoreDestination) {
