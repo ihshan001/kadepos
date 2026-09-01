@@ -1754,7 +1754,7 @@ fun SettingsScreen(
     val profile by viewModel.profile.collectAsState()
     var name by remember { mutableStateOf(profile?.name.orEmpty()) }
     var phone by remember { mutableStateOf(profile?.phone ?: "077 123 4567") }
-    var address by remember { mutableStateOf(profile?.address ?: "123 Main Street, Colombo") }
+    var address by remember { mutableStateOf(profile?.address ?: "24 Market Street") }
     var footer by remember { mutableStateOf(profile?.receiptFooter ?: "Thank you!") }
     var printerWidth by remember { mutableStateOf(profile?.printerPaperWidth ?: "58mm") }
 

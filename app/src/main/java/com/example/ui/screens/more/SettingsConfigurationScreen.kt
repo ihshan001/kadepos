@@ -549,7 +549,7 @@ fun SettingsConfigurationScreen(
                                 businessAddress = address,
                                 invoiceNumber = "INV-000123",
                                 timestamp = System.currentTimeMillis(),
-                                cashierName = "Nimal",
+                                cashierName = "Morgan",
                                 customerName = "Walk-in",
                                 items = listOf(
                                     ReceiptItemData("Sample item one", 2.0, 250.0, 500.0, "Kg"),
