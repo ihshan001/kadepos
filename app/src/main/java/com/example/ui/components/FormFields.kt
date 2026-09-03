@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -72,6 +73,7 @@ import kotlinx.coroutines.launch
  * actually scrolls.
  */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun FocusRiser(
     scrollState: ScrollState?,
     content: @Composable (Modifier) -> Unit
