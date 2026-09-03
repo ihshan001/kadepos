@@ -856,6 +856,7 @@ private fun FirstOptionsStep(
                     onChange = onChange,
                     shopTypeKey = shopTypeKey,
                     category = form.category,
+                    scrollState = scroll,
                     showChoices = true,
                     showRuns = false,
                     showModels = false
@@ -992,6 +993,7 @@ private fun SplitAgainStep(
                     onChange = onChange,
                     shopTypeKey = shopTypeKey,
                     category = form.category,
+                    scrollState = scroll,
                     showChoices = false,
                     showRuns = true,
                     showModels = true
@@ -1528,6 +1530,7 @@ private fun NormalMode(
                         onChange = onChange,
                         shopTypeKey = shopTypeKey,
                         category = form.category,
+                        scrollState = scrollState,
                         showChoices = true,
                         showRuns = true,
                         showModels = true
@@ -2007,6 +2010,7 @@ private fun QuickVariantPresets(
     onChange: (ProductForm) -> Unit,
     shopTypeKey: String,
     category: String = "",
+    scrollState: ScrollState,
     showChoices: Boolean = true,
     showRuns: Boolean = true,
     showModels: Boolean = true
@@ -2057,7 +2061,7 @@ private fun QuickVariantPresets(
         }
         Text("Quick sets", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Text(
-            "Open a set, then tick the sizes to give every option those sizes.",
+            "Open a set, tick what you need, and set a price for each one.",
             fontSize = 11.sp,
             color = TextSecondary
         )
@@ -2107,27 +2111,38 @@ private fun QuickVariantPresets(
                     if (expanded) {
                         HorizontalDivider(color = LightBorder)
                         Spacer(modifier = Modifier.height(8.dp))
-                        run.values.chunked(4).forEach { row ->
+                        run.values.forEach { value ->
+                            val allHave = draft.options.isNotEmpty() &&
+                                draft.options.all { option ->
+                                    option.subOptions.any { it.name.equals(value, ignoreCase = true) }
+                                }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                row.forEach { value ->
-                                    val allHave = draft.options.isNotEmpty() &&
-                                        draft.options.all { option ->
-                                            option.subOptions.any { it.name.equals(value, ignoreCase = true) }
-                                        }
-                                    SuggestionChip(
-                                        label = value,
-                                        selected = allHave,
-                                        onClick = { onChange(form.toggleRunValue(run, value)) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                if (row.size < 4) {
-                                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                                SuggestionChip(
+                                    label = value,
+                                    selected = allHave,
+                                    onClick = { onChange(form.toggleRunValue(run, value)) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (allHave) {
+                                    Box(modifier = Modifier.weight(0.9f)) {
+                                        SyncedNumberField(
+                                            value = form.runValuePrice(value),
+                                            onValueChange = { price ->
+                                                onChange(form.setRunValuePrice(value, price))
+                                            },
+                                            label = "Price",
+                                            key = "run-${run.key}-$value-price",
+                                            scrollState = scrollState
+                                        )
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.weight(0.9f))
                                 }
                             }
                         }
@@ -2142,7 +2157,7 @@ private fun QuickVariantPresets(
         Spacer(modifier = Modifier.height(10.dp))
         Text("Quick models", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Text(
-            "Open a brand and tick the models it comes in.",
+            "Open a brand, tick the models, and set a price for each one.",
             fontSize = 11.sp,
             color = TextSecondary
         )
@@ -2214,25 +2229,36 @@ private fun QuickVariantPresets(
                             Spacer(modifier = Modifier.weight(3f))
                         }
 
-                        pack.models.chunked(4).forEach { row ->
+                        pack.models.forEach { model ->
+                            val selected = brand?.subOptions
+                                ?.any { it.name.equals(model, ignoreCase = true) } == true
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                row.forEach { model ->
-                                    val selected = brand?.subOptions
-                                        ?.any { it.name.equals(model, ignoreCase = true) } == true
-                                    SuggestionChip(
-                                        label = model,
-                                        selected = selected,
-                                        onClick = { onChange(form.toggleModel(pack, model)) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                if (row.size < 4) {
-                                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                                SuggestionChip(
+                                    label = model,
+                                    selected = selected,
+                                    onClick = { onChange(form.toggleModel(pack, model)) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (selected) {
+                                    Box(modifier = Modifier.weight(0.9f)) {
+                                        SyncedNumberField(
+                                            value = form.modelPrice(pack, model),
+                                            onValueChange = { price ->
+                                                onChange(form.setModelPrice(pack, model, price))
+                                            },
+                                            label = "Price",
+                                            key = "model-${pack.key}-$model-price",
+                                            scrollState = scrollState
+                                        )
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.weight(0.9f))
                                 }
                             }
                         }
@@ -2361,6 +2387,66 @@ private fun ProductForm.toggleAllModels(pack: ProductOptionPresets.ModelPack): P
         base.copy(
             subGroupName = base.subGroupName.ifBlank { "Model" },
             options = base.options.map { if (it.name.equals(pack.brand, ignoreCase = true)) updatedBrand else it }
+        )
+    )
+}
+
+/**
+ * The price of one run value (a size / add-on). A run applies the value to
+ * every option, so the shown figure is the price held by the first option that
+ * has it; the rest are seeded identically.
+ */
+private fun ProductForm.runValuePrice(value: String): Double =
+    options.options.firstNotNullOfOrNull { option ->
+        option.subOptions.firstOrNull { it.name.equals(value, ignoreCase = true) }?.price
+    } ?: priceValue
+
+/**
+ * Sets the price of one run value on every option that carries it. This is the
+ * "Extra Egg is +200 everywhere" behaviour; a specific option can still be
+ * overridden afterwards in the combination table or the per-option editor.
+ */
+private fun ProductForm.setRunValuePrice(value: String, price: Double): ProductForm {
+    val draft = options
+    return updateOptions(
+        draft.copy(
+            options = draft.options.map { option ->
+                option.copy(
+                    subOptions = option.subOptions.map { sub ->
+                        if (sub.name.equals(value, ignoreCase = true)) sub.copy(price = price) else sub
+                    }
+                )
+            }
+        )
+    )
+}
+
+/** The price of one model on its brand's option. */
+private fun ProductForm.modelPrice(pack: ProductOptionPresets.ModelPack, model: String): Double =
+    options.options.firstOrNull { it.name.equals(pack.brand, ignoreCase = true) }
+        ?.subOptions?.firstOrNull { it.name.equals(model, ignoreCase = true) }?.price
+        ?: priceValue
+
+/** Sets the price of one model on its brand's option. */
+private fun ProductForm.setModelPrice(
+    pack: ProductOptionPresets.ModelPack,
+    model: String,
+    price: Double
+): ProductForm {
+    val draft = options
+    return updateOptions(
+        draft.copy(
+            options = draft.options.map { option ->
+                if (!option.name.equals(pack.brand, ignoreCase = true)) {
+                    option
+                } else {
+                    option.copy(
+                        subOptions = option.subOptions.map { sub ->
+                            if (sub.name.equals(model, ignoreCase = true)) sub.copy(price = price) else sub
+                        }
+                    )
+                }
+            }
         )
     )
 }
