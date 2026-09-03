@@ -86,7 +86,13 @@ object ProductOptionPresets {
                     listOf("drink", "beverage", "soda", "biscuit", "cream")),
                 ChoiceSet("pack", "Quick pack sizes", "Pack",
                     listOf("Single", "2 Pack", "6 Pack", "12 Pack"),
-                    listOf("biscuit", "snack", "chips"))
+                    listOf("biscuit", "snack", "chips")),
+                ChoiceSet("count", "Quick counts", "Count",
+                    listOf("Single", "2", "6", "10", "12", "20"),
+                    listOf("egg", "pack")),
+                ChoiceSet("scent", "Quick scents", "Scent",
+                    listOf("Lemon", "Rose", "Jasmine", "Sandal", "Lavender", "Original"),
+                    listOf("soap", "shampoo", "detergent", "perfume"))
             ),
             runs = emptyList()
         ),
@@ -169,9 +175,15 @@ object ProductOptionPresets {
                 ChoiceSet("length", "Quick cable lengths", "Length",
                     listOf("0.5m", "1m", "1.5m", "2m", "3m"),
                     listOf("cable", "cord", "wire")),
-                ChoiceSet("power", "Quick power", "Power",
+                ChoiceSet("power", "Quick charger power", "Power",
                     listOf("18W", "20W", "33W", "45W", "65W"),
-                    listOf("charger", "adapter", "power", "watt"))
+                    listOf("charger", "adapter", "power")),
+                ChoiceSet("connector", "Quick connectors", "Connector",
+                    listOf("USB-C", "Micro USB", "Lightning", "AUX"),
+                    listOf("cable", "cord", "connector", "adapter")),
+                ChoiceSet("watt", "Quick bulb wattage", "Wattage",
+                    listOf("9W", "12W", "15W", "20W"),
+                    listOf("bulb", "led", "light"))
             ),
             runs = emptyList()
         ),
@@ -188,7 +200,10 @@ object ProductOptionPresets {
                     listOf("paper", "drawing", "book")),
                 ChoiceSet("grade", "Quick pencil grades", "Grade",
                     listOf("HB", "2B", "4B", "6B"),
-                    listOf("pencil"))
+                    listOf("pencil")),
+                ChoiceSet("ruling", "Quick rulings", "Ruling",
+                    listOf("Single Line", "Square", "Blank", "Dotted"),
+                    listOf("book", "exercise", "copy"))
             ),
             runs = emptyList()
         ),
@@ -199,7 +214,13 @@ object ProductOptionPresets {
                     listOf("hair", "colour", "treatment", "cut")),
                 ChoiceSet("size", "Quick retail sizes", "Size",
                     listOf("100ml", "250ml", "500ml", "1L"),
-                    listOf("shampoo", "conditioner", "serum", "retail"))
+                    listOf("shampoo", "conditioner", "serum", "retail")),
+                ChoiceSet("scent", "Quick scents", "Scent",
+                    listOf("Rose", "Jasmine", "Aloe", "Coconut", "Herbal"),
+                    listOf("shampoo", "oil", "cream", "lotion")),
+                ChoiceSet("shade", "Quick hair shades", "Shade",
+                    listOf("Natural Black", "Brown", "Burgundy", "Blonde", "Highlights"),
+                    listOf("colour", "dye"))
             ),
             runs = emptyList()
         ),
@@ -210,7 +231,13 @@ object ProductOptionPresets {
                     listOf("screen", "battery", "replacement", "repair", "port")),
                 ChoiceSet("storage", "Quick storage", "Storage",
                     listOf("32GB", "64GB", "128GB", "256GB"),
-                    listOf("model", "phone", "storage"))
+                    listOf("model", "phone", "storage")),
+                ChoiceSet("colour", "Quick colours", "Colour",
+                    listOf("Black", "White", "Blue", "Green", "Red"),
+                    listOf("cover", "case", "glass", "back")),
+                ChoiceSet("quality", "Quick part quality", "Quality",
+                    listOf("Original", "High Copy", "Compatible"),
+                    listOf("screen", "battery", "part", "replacement"))
             ),
             runs = emptyList()
         ),
@@ -221,7 +248,10 @@ object ProductOptionPresets {
                     listOf("rose", "bouquet", "flower")),
                 ChoiceSet("stems", "Quick stem counts", "Stems",
                     listOf("5", "10", "20", "50"),
-                    listOf("stem", "bunch", "rose"))
+                    listOf("stem", "bunch", "rose")),
+                ChoiceSet("occasion", "Quick occasions", "Occasion",
+                    listOf("Birthday", "Anniversary", "Sympathy", "Wedding", "Get Well", "Congratulations"),
+                    listOf("bouquet", "arrangement", "wreath"))
             ),
             runs = listOf(
                 RunSet("size", "Bouquet sizes", "Size",
@@ -254,7 +284,13 @@ object ProductOptionPresets {
                     listOf("paint", "enamel", "emulsion", "primer")),
                 ChoiceSet("gauge", "Quick wire gauges", "Gauge",
                     listOf("1mm", "1.5mm", "2.5mm", "4mm"),
-                    listOf("wire", "cable", "electrical", "conduit"))
+                    listOf("wire", "cable", "electrical", "conduit")),
+                ChoiceSet("length", "Quick lengths", "Length",
+                    listOf("1m", "2m", "3m", "6m"),
+                    listOf("pipe", "rod", "bar", "sheet", "conduit")),
+                ChoiceSet("material", "Quick materials", "Material",
+                    listOf("Steel", "Brass", "Copper", "PVC", "Stainless"),
+                    listOf("fitting", "pipe", "screw", "bolt", "washer"))
             ),
             runs = emptyList()
         ),
@@ -267,7 +303,10 @@ object ProductOptionPresets {
                     listOf("Red", "Blue", "Green", "Yellow", "Pink", "Purple", "Mixed")),
                 ChoiceSet("age", "Quick age ranges", "Age",
                     listOf("0-2", "3-5", "6-8", "9-12"),
-                    listOf("kids", "baby", "educational", "puzzle"))
+                    listOf("kids", "baby", "educational", "puzzle")),
+                ChoiceSet("occasion", "Quick occasions", "Occasion",
+                    listOf("Birthday", "Anniversary", "Wedding", "Baby Shower", "Christmas"),
+                    listOf("gift", "card", "return"))
             ),
             runs = emptyList()
         ),
@@ -285,7 +324,10 @@ object ProductOptionPresets {
             runs = listOf(
                 RunSet("apparel", "S–XXL", "Size",
                     listOf("S", "M", "L", "XL", "XXL"),
-                    listOf("shirt", "short", "tracksuit", "wear", "jersey"))
+                    listOf("shirt", "short", "tracksuit", "wear", "jersey")),
+                RunSet("kids", "Kids sizes", "Size",
+                    listOf("XS", "S", "M", "L", "XL"),
+                    listOf("kids", "junior"))
             )
         )
     )
