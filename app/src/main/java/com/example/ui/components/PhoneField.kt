@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -44,11 +46,13 @@ import com.example.ui.theme.BrandPrimary
 import com.example.ui.theme.BrandSurface
 import com.example.ui.theme.LightBorder
 import com.example.ui.theme.LightSurface
+import com.example.ui.theme.StatusGreen
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.util.Country
 import com.example.ui.util.CountryCodes
+import com.example.ui.util.PhoneValidator
 
 /**
  * A phone number box that knows which country it is in.
@@ -71,6 +75,17 @@ fun PhoneField(
     testTag: String? = null
 ) {
     var showPicker by remember { mutableStateOf(false) }
+
+    // The number is checked against the country rules here as the user types,
+    // not just when the form is submitted, so the box can turn green the
+    // moment the length is right and show how many digits are still missing
+    // before then. This matters because the Continue button stays disabled
+    // until the number is complete — without live feedback there is nothing
+    // to explain why.
+    val digits = localNumber.filter { it.isDigit() }
+    val exact = country.exactLocalLength
+    val liveError = PhoneValidator.errorFor(country, localNumber)
+    val valid = liveError == null && localNumber.isNotBlank()
 
     Column(modifier = modifier) {
         Row(
@@ -112,9 +127,16 @@ fun PhoneField(
                 label = label,
                 placeholder = placeholder,
                 error = error,
-                helper = if (error == null) {
-                    country.exactLocalLength?.let { "${country.name} numbers have $it digits" }
-                        ?: "Type the number without the first 0"
+                helper = when {
+                    error != null -> null
+                    valid -> null
+                    exact != null && digits.isNotEmpty() && digits.length < exact ->
+                        "${country.name} numbers have $exact digits — you've typed ${digits.length}"
+                    exact != null -> "${country.name} numbers have $exact digits"
+                    else -> "Type the number without the first 0"
+                },
+                trailingIcon = if (valid) {
+                    { Icon(Icons.Default.CheckCircle, contentDescription = "Valid number", tint = StatusGreen) }
                 } else {
                     null
                 },
@@ -126,13 +148,23 @@ fun PhoneField(
             )
         }
 
-        if (localNumber.isNotBlank() && error == null) {
+        if (valid) {
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Saved as ${CountryCodes.join(country, localNumber)}",
-                fontSize = 11.sp,
-                color = TextSecondary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = StatusGreen,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    "Correct — saved as ${CountryCodes.join(country, localNumber)}",
+                    fontSize = 12.sp,
+                    color = StatusGreen,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 
