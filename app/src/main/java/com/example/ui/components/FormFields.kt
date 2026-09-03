@@ -3,6 +3,8 @@ package com.example.ui.components
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -22,8 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,7 +41,6 @@ import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /**
  * Shared text fields.
@@ -56,17 +55,21 @@ import kotlin.math.roundToInt
  *     eye button so a four digit code typed in a hurry can be read back.
  */
 
-/** Remembers where a field sits, without triggering recomposition. */
-private class FieldPosition {
-    var top: Float = 0f
-    var height: Int = 0
-}
-
 /**
- * Wraps a field so it rises to the middle of the screen when it takes focus.
+ * Wraps a field so it stays visible when it takes focus.
  *
  * [scrollState] is the state of the scrolling container around the field; pass
  * null for a field that lives on a non-scrolling screen.
+ *
+ * The first version of this measured the field's position with
+ * [androidx.compose.ui.layout.onGloballyPositioned] + `positionInRoot()` and
+ * hand-scrolled the container. That measurement is in *screen* coordinates,
+ * while the scrollable usually sits below a header inside a dialog — so the
+ * offset was wrong by the height of that header, and tapping a field scrolled
+ * the whole form back to the top instead of holding the field steady. Asking
+ * Compose to [androidx.compose.foundation.relocation.BringIntoViewRequester]
+ * instead lets the framework work out the right amount for whichever container
+ * actually scrolls.
  */
 @Composable
 fun FocusRiser(
@@ -78,27 +81,21 @@ fun FocusRiser(
         return
     }
     val scope = rememberCoroutineScope()
-    val position = remember { FieldPosition() }
+    val requester = remember { BringIntoViewRequester() }
     val running = remember { mutableStateOf<Job?>(null) }
 
     content(
         Modifier
-            .onGloballyPositioned { coordinates ->
-                position.top = coordinates.positionInRoot().y
-                position.height = coordinates.size.height
-            }
+            .bringIntoViewRequester(requester)
             .onFocusEvent { state ->
                 running.value?.cancel()
                 if (!state.isFocused) return@onFocusEvent
                 running.value = scope.launch {
-                    // Wait for the keyboard to finish resizing the window,
-                    // otherwise the scroll target is computed from the old height.
+                    // Wait for the keyboard to finish resizing the window
+                    // (adjustResize), then let Compose scroll the minimum
+                    // amount needed to keep the field on screen.
                     delay(220)
-                    val viewport = scrollState.viewportSize
-                    if (viewport <= 0) return@launch
-                    val middle = position.top + position.height / 2f - viewport / 2f
-                    val target = middle.roundToInt().coerceIn(0, scrollState.maxValue)
-                    scrollState.animateScrollTo(target)
+                    requester.bringIntoView()
                 }
             }
     )

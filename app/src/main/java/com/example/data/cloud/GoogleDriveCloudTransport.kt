@@ -16,16 +16,17 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Minimal Google Drive REST transport.
+ * Minimal Google Drive REST transport, organised around a **shared shop folder**.
  *
- * Uses the account already present on the device (normally the owner's Gmail).
- * The first slice keeps a per-device folder: "arro-pos-device/<deviceName>" so
- * two phones signing in with the same Google account do not overwrite each
- * other.
+ * Every device that belongs to the same shop writes into one folder
+ * (`arro-pos-<shopKey>`) owned by whichever account created it, and every file
+ * is named `<device>__<timestamp>.zip`. When a staff phone uploads under its
+ * own Gmail, the file is additionally shared back to the hub (owner's main
+ * Gmail) so the owner sees every device's snapshots hour by hour in one place.
  *
- * Note: the first upload from a fresh Android install may ask the owner to
- * approve access to Google Drive through the Google account chooser. This is
- * handled by AccountManager through Google Play Services.
+ * Uses the account already present on the device. The first upload from a
+ * fresh install may ask the owner to approve Drive access through the Google
+ * account chooser (handled by AccountManager through Google Play Services).
  */
 class GoogleDriveCloudTransport(private val context: Context) {
 
@@ -54,26 +55,39 @@ class GoogleDriveCloudTransport(private val context: Context) {
         }.getOrNull()
     }
 
-    suspend fun ensureDeviceFolder(token: String, deviceName: String): String = withContext(Dispatchers.IO) {
-        val safeName = "arro-pos-device-${deviceName.ifBlank { "unknown" }}".replace(
-            Regex("[^A-Za-z0-9._-]"), "-"
-        )
-        val existing = queryFolder(token, safeName)
-        existing ?: createFolder(token, safeName)
+    /**
+     * Finds or creates the shared folder for this shop. One folder per shop, so
+     * every device's uploads land side by side.
+     */
+    suspend fun ensureShopFolder(token: String, shopKey: String): String = withContext(Dispatchers.IO) {
+        val safeName = folderName(shopKey)
+        queryFolder(token, safeName) ?: createFolder(token, safeName)
     }
 
+    /**
+     * Uploads one backup into the shop folder. When [shareWith] is another
+     * account (the hub), the uploaded file is granted writer access to that
+     * account so the owner can see and open it from their own Drive.
+     */
     suspend fun upload(
         token: String,
+        shopKey: String,
         deviceName: String,
         fileName: String,
-        file: File
+        file: File,
+        uploaderEmail: String = "",
+        shareWith: String = ""
     ): FileMetadata? = withContext(Dispatchers.IO) {
         runCatching {
-            val folderId = ensureDeviceFolder(token, deviceName)
+            val folderId = ensureShopFolder(token, shopKey)
             val metadata = JSONObject().apply {
                 put("name", fileName)
                 put("mimeType", "application/zip")
                 put("parents", JSONArray().put(folderId))
+                put("appProperties", JSONObject().apply {
+                    put("device", deviceName)
+                    put("account", uploaderEmail)
+                })
             }.toString()
             val body = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -85,24 +99,58 @@ class GoogleDriveCloudTransport(private val context: Context) {
                 .header("Authorization", "Bearer $token")
                 .post(body)
                 .build()
-            client.newCall(request).execute().use { response ->
+            val uploaded = client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw IllegalStateException("Upload failed ${response.code}: ${response.body?.string().orEmpty()}")
                 }
                 FileMetadata.fromJson(response.body?.string().orEmpty())
             }
+            // A staff phone writes under its own account; hand the file to the
+            // hub so the owner's Drive shows it too.
+            if (shareWith.isNotBlank() && !shareWith.equals(uploaderEmail, ignoreCase = true)) {
+                grantWriterAccess(token, uploaded.id, shareWith)
+            }
+            uploaded
         }.getOrNull()
     }
 
     /**
-     * Downloads the newest backup in this device's Drive folder. Returns the
-     * bytes and file id, or null when the folder is still empty.
+     * The snapshots currently in this shop's folder, newest first. This is the
+     * hour-by-hour record: each row is a timestamped copy from one device.
      */
-    suspend fun downloadLatest(token: String, deviceName: String): DownloadedFile? = withContext(Dispatchers.IO) {
+    suspend fun listSnapshots(token: String, shopKey: String, limit: Int = 50): List<DriveFileInfo> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val folderId = ensureShopFolder(token, shopKey)
+                val request = Request.Builder()
+                    .url("https://www.googleapis.com/drive/v3/files?q=${url("'$folderId' in parents and trashed=false and mimeType = 'application/zip'")}&orderBy=modifiedTime desc&pageSize=$limit&fields=files(id,name,modifiedTime,appProperties)")
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IllegalStateException("List failed ${response.code}")
+                    val arr = JSONObject(response.body?.string().orEmpty()).optJSONArray("files") ?: JSONArray()
+                    (0 until arr.length()).mapNotNull { i ->
+                        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                        DriveFileInfo(
+                            id = o.optString("id"),
+                            name = o.optString("name"),
+                            modifiedTime = o.optString("modifiedTime")
+                        )
+                    }
+                }
+            }.getOrDefault(emptyList())
+        }
+
+    /**
+     * Downloads the newest backup in this shop's folder. Returns the bytes and
+     * file id, or null when the folder is still empty.
+     */
+    suspend fun downloadLatest(token: String, shopKey: String): DownloadedFile? = withContext(Dispatchers.IO) {
         runCatching {
-            val folderId = ensureDeviceFolder(token, deviceName)
+            val folderId = ensureShopFolder(token, shopKey)
             val request = Request.Builder()
-                .url("https://www.googleapis.com/drive/v3/files?q=${url("'$folderId' in parents and trashed=false")}&orderBy=modifiedTime desc&pageSize=1&fields=files(id,name,modifiedTime)")
+                .url("https://www.googleapis.com/drive/v3/files?q=${url("'$folderId' in parents and trashed=false and mimeType = 'application/zip'")}&orderBy=modifiedTime desc&pageSize=1&fields=files(id,name,modifiedTime)")
                 .header("Authorization", "Bearer $token")
                 .get()
                 .build()
@@ -122,6 +170,30 @@ class GoogleDriveCloudTransport(private val context: Context) {
             }
             DownloadedFile(id, meta.optString("name"), meta.optString("modifiedTime"), bytes)
         }.getOrNull()
+    }
+
+    /**
+     * Grants [email] writer access to a file this app created. Best effort —
+     * a failure here must never fail the backup itself.
+     */
+    private fun grantWriterAccess(token: String, fileId: String, email: String) {
+        runCatching {
+            val body = JSONObject().apply {
+                put("role", "writer")
+                put("type", "user")
+                put("emailAddress", email)
+            }.toString().toRequestBody(json)
+            val request = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId/permissions?sendNotificationEmail=false")
+                .header("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Share failed ${response.code}")
+                }
+            }
+        }
     }
 
     private fun queryFolder(token: String, name: String): String? {
@@ -153,6 +225,9 @@ class GoogleDriveCloudTransport(private val context: Context) {
         }
     }
 
+    private fun folderName(shopKey: String): String =
+        "arro-pos-${shopKey.replace(Regex("[^A-Za-z0-9._-]"), "-").trim('-').ifBlank { "shop" }}"
+
     private fun url(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
 
     data class FileMetadata(
@@ -166,6 +241,12 @@ class GoogleDriveCloudTransport(private val context: Context) {
             }
         }
     }
+
+    data class DriveFileInfo(
+        val id: String,
+        val name: String,
+        val modifiedTime: String
+    )
 
     data class DownloadedFile(
         val id: String,

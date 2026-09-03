@@ -10,8 +10,11 @@ import kotlinx.coroutines.ensureActive
  * Per-device backup/sync worker.
  *
  * The phone is always the source of truth. This worker only reads the local
- * database, creates a safety copy first, then may upload that snapshot. It
- * never blocks the app and it uploads only when the data hash has changed.
+ * database, creates a safety copy first, then uploads that snapshot into the
+ * shop's shared Drive folder. When the device signs in with a staff Gmail, the
+ * uploaded file is shared back to the owner's hub account so the owner still
+ * sees everything in one place. It never blocks the app and uploads only when
+ * the data hash has changed.
  */
 class CloudSyncWorker(
     appContext: Context,
@@ -28,10 +31,12 @@ class CloudSyncWorker(
         val mode = inputData.getString(KEY_MODE) ?: MODE_HOURLY
         val backupManager = CloudBackupManager(applicationContext)
         val transport = GoogleDriveCloudTransport(applicationContext)
+        val deviceName = settings.deviceName.ifBlank { repo.displayDeviceName() }
+        val shopKey = settings.shopKey.ifBlank { repo.shopKeyFor("") }
 
         // Make a rolling local backup before any cloud write. Daily backup runs
         // even when no Google account is connected yet.
-        val backup = backupManager.createBackup(settings.deviceName.ifBlank { repo.displayDeviceName() })
+        val backup = backupManager.createBackup(deviceName)
         if (backup.file == null) {
             repo.update { it.copy(lastBackupAt = 0L, lastError = backup.message) }
             return Result.success()
@@ -77,24 +82,49 @@ class CloudSyncWorker(
 
         val uploaded = transport.upload(
             token = token,
-            deviceName = repo.deviceId(),
+            shopKey = shopKey,
+            deviceName = deviceName,
             fileName = backup.file.name,
-            file = backup.file
+            file = backup.file,
+            uploaderEmail = settings.ownerGmail,
+            shareWith = settings.hub()
         )
         currentCoroutineContext().ensureActive()
 
         if (uploaded != null) {
-            repo.update {
-                it.copy(
-                    lastSyncAt = System.currentTimeMillis(),
-                    lastUploadedFile = uploaded.name,
-                    lastUploadedHash = backupManager.snapshotHash(),
-                    lastError = ""
-                )
+            repo.update { current ->
+                current
+                    .copy(
+                        lastSyncAt = System.currentTimeMillis(),
+                        lastUploadedFile = uploaded.name,
+                        lastUploadedHash = backupManager.snapshotHash(),
+                        lastError = ""
+                    )
+                    .withSyncEvent(
+                        CloudSyncEvent(
+                            at = System.currentTimeMillis(),
+                            device = deviceName,
+                            account = settings.ownerGmail,
+                            fileName = uploaded.name,
+                            ok = true
+                        )
+                    )
             }
             return Result.success()
         }
-        repo.update { it.copy(lastError = "Could not upload the backup. Check your internet connection and try again.") }
+        repo.update { current ->
+            current
+                .copy(lastError = "Could not upload the backup. Check your internet connection and try again.")
+                .withSyncEvent(
+                    CloudSyncEvent(
+                        at = System.currentTimeMillis(),
+                        device = deviceName,
+                        account = settings.ownerGmail,
+                        fileName = backup.file.name,
+                        ok = false
+                    )
+                )
+        }
         return if (mode == MODE_MANUAL) Result.failure() else Result.retry()
     }
 

@@ -291,6 +291,20 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
 }
 
 /**
+ * v7 -> v8. Staff members get their own Gmail for cloud backup.
+ *
+ * A cashier should never need the owner's Google password. Each staff row gains
+ * an optional email so the team's accounts can be linked to the owner's main
+ * Gmail for the shared Drive backup, while each phone still signs in with the
+ * person's own account.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE staff ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/**
  * The notification types switched on for a shop that has never chosen. Kept as
  * a literal because a migration must describe the schema *as it was at that
  * version* - it can never call into current app code, which will keep changing.
@@ -307,5 +321,6 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_3_4,
     MIGRATION_4_5,
     MIGRATION_5_6,
-    MIGRATION_6_7
+    MIGRATION_6_7,
+    MIGRATION_7_8
 )

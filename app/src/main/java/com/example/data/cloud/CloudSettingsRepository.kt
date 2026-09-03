@@ -34,6 +34,10 @@ class CloudSettingsRepository(context: Context) {
                 keepBackupDays = o.optInt("keepBackupDays", 30),
                 ownerBackupEnabled = o.optBoolean("ownerBackupEnabled", true),
                 ownerGmail = o.optString("ownerGmail", ""),
+                hubGmail = o.optString("hubGmail", ""),
+                linkedGmails = o.optString("linkedGmails", ""),
+                shopKey = o.optString("shopKey", ""),
+                sharedFolderId = o.optString("sharedFolderId", ""),
                 deviceName = o.optString("deviceName", ""),
                 lastBackupAt = o.optLong("lastBackupAt", 0L),
                 lastSyncAt = o.optLong("lastSyncAt", 0L),
@@ -42,7 +46,8 @@ class CloudSettingsRepository(context: Context) {
                 lastUploadedHash = o.optString("lastUploadedHash", ""),
                 lastError = o.optString("lastError", ""),
                 pendingChanges = o.optInt("pendingChanges", 0),
-                accountConnected = o.optBoolean("accountConnected", false)
+                accountConnected = o.optBoolean("accountConnected", false),
+                syncHistory = o.optString("syncHistory", "")
             )
         }.getOrDefault(CloudSettings())
     }
@@ -59,6 +64,10 @@ class CloudSettingsRepository(context: Context) {
             put("keepBackupDays", settings.keepBackupDays)
             put("ownerBackupEnabled", settings.ownerBackupEnabled)
             put("ownerGmail", settings.ownerGmail)
+            put("hubGmail", settings.hubGmail)
+            put("linkedGmails", settings.linkedGmails)
+            put("shopKey", settings.shopKey)
+            put("sharedFolderId", settings.sharedFolderId)
             put("deviceName", settings.deviceName)
             put("lastBackupAt", settings.lastBackupAt)
             put("lastSyncAt", settings.lastSyncAt)
@@ -68,6 +77,7 @@ class CloudSettingsRepository(context: Context) {
             put("lastError", settings.lastError)
             put("pendingChanges", settings.pendingChanges)
             put("accountConnected", settings.accountConnected)
+            put("syncHistory", settings.syncHistory)
         }
         prefs.edit().putString(KEY_JSON, o.toString()).apply()
     }
@@ -123,6 +133,20 @@ class CloudSettingsRepository(context: Context) {
 
     /** Short name shown to the owner; the full Android id stays in the folder. */
     fun displayDeviceName(): String = load().deviceName.ifBlank { deviceId().take(8) }
+
+    /**
+     * A folder-safe, shop-stable key derived from the shop name. Two devices
+     * of the same shop must produce the same key, so it is based on the name
+     * the owner typed, not on the device. A blank name falls back to the
+     * device id, so a solo shop that never set a name still gets a folder.
+     */
+    fun shopKeyFor(shopName: String): String {
+        val cleaned = shopName.trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+        return cleaned.ifBlank { "shop-${deviceId().take(8)}" }
+    }
 
     /** Google accounts already present on the device, so the owner does not have to type an address. */
     @Suppress("DEPRECATION")

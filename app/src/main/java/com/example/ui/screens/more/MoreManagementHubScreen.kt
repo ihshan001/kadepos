@@ -1057,14 +1057,15 @@ fun StaffScreen(
         StaffEditorDialog(
             existing = editing,
             defaultRole = defaultNewRole,
-            onSave = { name, phone, role, pin, active ->
+            onSave = { name, phone, email, role, pin, active ->
                 viewModel.saveStaff(
                     id = editing?.id ?: 0L,
                     name = name,
                     phone = phone,
                     role = role,
                     pin = pin,
-                    isActive = active
+                    isActive = active,
+                    email = email
                 )
                 editing = null
                 addingNew = false
@@ -1146,6 +1147,9 @@ private fun StaffCard(
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
+                    if (staff.email.isNotBlank()) {
+                        Text(staff.email, fontSize = 11.sp, color = TextMuted)
+                    }
                     if (!staff.isActive) {
                         Text("Paused — cannot sign in", fontSize = 11.sp, color = StatusAmber)
                     }
@@ -1195,16 +1199,17 @@ private fun StaffCard(
     }
 }
 
-/** Add or edit one person: name, phone, role and their own 4 digit PIN. */
+/** Add or edit one person: name, phone, Gmail, role and their own 4 digit PIN. */
 @Composable
 private fun StaffEditorDialog(
     existing: StaffEntity?,
     defaultRole: StaffRole = StaffRole.CASHIER,
-    onSave: (String, String, String, String, Boolean) -> Unit,
+    onSave: (String, String, String, String, String, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
+    var email by remember { mutableStateOf(existing?.email.orEmpty()) }
     var role by remember { mutableStateOf(existing?.let { StaffRole.fromName(it.role) } ?: defaultRole) }
     var pin by remember { mutableStateOf("") }
     // A PIN typed on a phone deserves to be checked before it is saved.
@@ -1250,6 +1255,23 @@ private fun StaffEditorDialog(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it.trim() },
+                    label = { Text("Their Gmail (optional)") },
+                    placeholder = { Text("e.g. cashier@gmail.com") },
+                    supportingText = {
+                        Text(
+                            "They back up with their own Google account instead of yours.",
+                            fontSize = 11.sp
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1347,7 +1369,7 @@ private fun StaffEditorDialog(
                         modifier = Modifier.weight(1f)
                     ) { Text("Cancel") }
                     Button(
-                        onClick = { onSave(name, phone, role.roleName, pin, active) },
+                        onClick = { onSave(name, phone, email, role.roleName, pin, active) },
                         enabled = nameOk && pinOk && !needsPin,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),

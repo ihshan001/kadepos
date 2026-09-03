@@ -29,6 +29,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.example.data.cloud.CloudSettings
+import com.example.data.cloud.CloudSyncEvent
+import com.example.data.cloud.GoogleDriveCloudTransport
 import com.example.ui.components.AppTextField
 import com.example.ui.components.keyboardPadding
 import com.example.ui.theme.*
@@ -39,8 +41,12 @@ import java.util.Locale
 
 /**
  * Owner-facing backup screen. Visible only when the provider has enabled the
- * cloud feature. The owner can connect a Google account, back up and sync; the
- * master switch stays with the provider screen.
+ * cloud feature.
+ *
+ * The model is one **hub** Gmail (the owner's main account) that stores the
+ * whole shop's data, plus any number of **linked** staff Gmails. A cashier
+ * signs in with their own account; every device still writes into the same
+ * shared Drive folder and the owner sees the snapshots arrive hour by hour.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,11 +58,40 @@ fun CloudBackupScreen(
     val cloud = settings ?: CloudSettings()
     val context = LocalContext.current
     var showAccountDialog by remember { mutableStateOf(false) }
+    var showHubDialog by remember { mutableStateOf(false) }
+    var showLinkDialog by remember { mutableStateOf(false) }
+
+    // Hour-by-hour record: the local rolling history plus the live Drive folder.
+    val localHistory = remember(cloud.syncHistory) { cloud.syncEvents() }
+    var driveSnapshots by remember { mutableStateOf<List<GoogleDriveCloudTransport.DriveFileInfo>?>(null) }
+    var loadingDrive by remember { mutableStateOf(false) }
+
     val accountsPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { showAccountDialog = true }
 
     LaunchedEffect(Unit) { viewModel.refreshCloud() }
+
+    // Fetch the live Drive folder whenever a refresh is requested.
+    LaunchedEffect(driveSnapshots, loadingDrive) {
+        if (loadingDrive) {
+            val files = viewModel.fetchDriveSnapshots()
+            driveSnapshots = files
+            loadingDrive = false
+        }
+    }
+
+    fun requestAccountPermission() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.GET_ACCOUNTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            showAccountDialog = true
+        } else {
+            accountsPermission.launch(Manifest.permission.GET_ACCOUNTS)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -101,47 +136,83 @@ fun CloudBackupScreen(
                     }
                 }
             } else {
-                item {
-                    StatusCard(cloud)
-                }
+                item { StatusCard(cloud) }
 
+                // --- The owner's main account (the hub) --------------------
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LightSurface),
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Connected Google Account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Cloud, contentDescription = null, tint = BrandPrimary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Main Google account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "This is where the whole shop's data is stored. Staff phones feed into it with their own accounts.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
-                            if (cloud.ownerGmail.isNotBlank()) {
-                                Text(cloud.ownerGmail, color = BrandPrimary, fontWeight = FontWeight.SemiBold)
-                                Text("Backups from this device use this account.", fontSize = 12.sp, color = TextSecondary)
+                            if (cloud.hub().isNotBlank()) {
+                                Text(cloud.hub(), color = BrandPrimary, fontWeight = FontWeight.SemiBold)
                             } else {
-                                Text("No account connected yet. Selling still works normally.", fontSize = 13.sp, color = StatusRed)
+                                Text("No main account set yet.", fontSize = 13.sp, color = StatusRed)
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                             OutlinedButton(
-                                onClick = {
-                                    val granted = ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.GET_ACCOUNTS
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                    if (granted) {
-                                        showAccountDialog = true
-                                    } else {
-                                        accountsPermission.launch(Manifest.permission.GET_ACCOUNTS)
-                                    }
-                                },
+                                onClick = { showHubDialog = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.AccountCircle, contentDescription = null, Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(if (cloud.ownerGmail.isBlank()) "Connect Google account" else "Change Google account")
+                                Text(if (cloud.hub().isBlank()) "Set main account" else "Change main account")
                             }
                         }
                     }
                 }
 
+                // --- The account this device signs in with -----------------
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = LightSurface),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("This phone's Google account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (cloud.ownerGmail.isNotBlank()) {
+                                Text(cloud.ownerGmail, color = BrandPrimary, fontWeight = FontWeight.SemiBold)
+                                Text("This phone backs up under this account.", fontSize = 12.sp, color = TextSecondary)
+                            } else {
+                                Text("No account connected yet. Selling still works normally.", fontSize = 13.sp, color = StatusRed)
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = { requestAccountPermission() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Smartphone, contentDescription = null, Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (cloud.ownerGmail.isBlank()) "Connect Google account" else "Change this phone's account")
+                            }
+                        }
+                    }
+                }
+
+                // --- Linked staff Gmails -----------------------------------
+                item {
+                    LinkedAccountsCard(
+                        cloud = cloud,
+                        onAdd = { showLinkDialog = true },
+                        onRemove = { email -> viewModel.unlinkGmail(email) }
+                    )
+                }
+
+                // --- Copy switch -------------------------------------------
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LightSurface),
@@ -153,11 +224,7 @@ fun CloudBackupScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "Copy this shop's data",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
+                                    Text("Copy this shop's data", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text(
                                         "Turn it off to stop backups from this phone. Nothing is deleted.",
                                         fontSize = 12.sp,
@@ -173,6 +240,7 @@ fun CloudBackupScreen(
                     }
                 }
 
+                // --- Backup / Sync actions --------------------------------
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = BrandSurface),
@@ -203,7 +271,7 @@ fun CloudBackupScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "A backup is created before every sync. Sync only runs when there are new changes.",
+                                "A backup is created before every sync. Sync runs hourly, but only when there are new changes.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
@@ -222,9 +290,22 @@ fun CloudBackupScreen(
                     }
                 }
 
+                // --- Hour-by-hour history ----------------------------------
+                item {
+                    SyncHistoryCard(
+                        localEvents = localHistory,
+                        driveFiles = driveSnapshots,
+                        loading = loadingDrive,
+                        onRefresh = {
+                            loadingDrive = true
+                            driveSnapshots = null
+                        }
+                    )
+                }
+
                 item {
                     Text(
-                        "Google Drive is used only for backup copies from this device. Your shop data stays on this phone and selling never waits for the cloud.",
+                        "Google Drive holds the shop's backup copies. The shop keeps working on this phone even with no internet, and selling never waits for the cloud.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 4.dp)
@@ -246,6 +327,175 @@ fun CloudBackupScreen(
         )
     }
 
+    if (showHubDialog) {
+        ConnectAccountDialog(
+            settings = cloud.copy(ownerGmail = cloud.hub()),
+            accounts = viewModel.googleAccounts(),
+            title = "Main Google account",
+            onSelect = { email ->
+                viewModel.setHubGmail(email)
+                showHubDialog = false
+            },
+            onDismiss = { showHubDialog = false }
+        )
+    }
+
+    if (showLinkDialog) {
+        LinkGmailDialog(
+            accounts = viewModel.googleAccounts(),
+            alreadyLinked = cloud.linkedEmails().toSet(),
+            hub = cloud.hub(),
+            onSelect = { email ->
+                viewModel.linkGmail(email)
+                showLinkDialog = false
+            },
+            onDismiss = { showLinkDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun LinkedAccountsCard(
+    cloud: CloudSettings,
+    onAdd: () -> Unit,
+    onRemove: (String) -> Unit
+) {
+    val linked = cloud.linkedEmails()
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Group, contentDescription = null, tint = BrandPrimary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Linked team accounts", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        "Staff back up with their own Gmail, not yours.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+                TextButton(onClick = onAdd) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Link")
+                }
+            }
+
+            if (linked.isEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "No staff accounts linked. Link a staff member's Gmail so their phone backs up under their own account.",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+            } else {
+                Spacer(modifier = Modifier.height(6.dp))
+                linked.forEach { email ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(email, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onRemove(email) }) {
+                            Text("Remove", fontSize = 12.sp, color = StatusRed)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The hour-by-hour record. Shows the local rolling history plus, when
+ * refreshed, the live list of snapshots in the shared Drive folder.
+ */
+@Composable
+private fun SyncHistoryCard(
+    localEvents: List<CloudSyncEvent>,
+    driveFiles: List<GoogleDriveCloudTransport.DriveFileInfo>?,
+    loading: Boolean,
+    onRefresh: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, contentDescription = null, tint = BrandPrimary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Hour-by-hour data", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Each copy is one snapshot of the shop.", fontSize = 12.sp, color = TextSecondary)
+                }
+                TextButton(onClick = onRefresh, enabled = !loading) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (loading) "Loading…" else "Refresh")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            when {
+                loading -> {
+                    Text("Reading the shared Drive folder…", fontSize = 12.sp, color = TextSecondary)
+                }
+
+                driveFiles != null -> {
+                    if (driveFiles.isEmpty()) {
+                        Text("No snapshots in Drive yet. Tap Sync now to create the first one.", fontSize = 12.sp, color = TextSecondary)
+                    } else {
+                        driveFiles.take(25).forEach { file ->
+                            HistoryRow(name = file.name, whenText = driveTime(file.modifiedTime))
+                        }
+                    }
+                }
+
+                localEvents.isNotEmpty() -> {
+                    localEvents.take(25).forEach { event ->
+                        HistoryRow(
+                            name = event.fileName,
+                            whenText = timestamp(event.at),
+                            detail = event.device.ifBlank { event.account },
+                            ok = event.ok
+                        )
+                    }
+                }
+
+                else -> {
+                    Text("No history yet. Syncs will appear here as they happen.", fontSize = 12.sp, color = TextSecondary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryRow(name: String, whenText: String, detail: String = "", ok: Boolean = true) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(8.dp).clip(CircleShape)
+                .background(if (ok) StatusGreen else StatusRed)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            if (detail.isNotBlank()) {
+                Text(detail, fontSize = 11.sp, color = TextSecondary)
+            }
+        }
+        Text(whenText, fontSize = 11.sp, color = TextSecondary)
+    }
 }
 
 @Composable
@@ -277,6 +527,7 @@ private fun StatusCard(cloud: CloudSettings) {
             Text("Last backup: ${lastBackup ?: "Not yet"}", fontSize = 13.sp, color = TextSecondary)
             Text("Last sync: ${lastSync ?: "Not yet"}", fontSize = 13.sp, color = TextSecondary)
             Text("Device: ${cloud.deviceName.ifBlank { "This phone" }}", fontSize = 13.sp, color = TextSecondary)
+            Text("Shared folder: arro-pos-${cloud.shopKey.ifBlank { "…" }}", fontSize = 11.sp, color = TextMuted)
         }
     }
 }
@@ -285,17 +536,18 @@ private fun StatusCard(cloud: CloudSettings) {
 fun ConnectAccountDialog(
     settings: CloudSettings,
     accounts: List<String>,
+    title: String = "Connect Google account",
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var manual by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Connect Google account") },
+        title = { Text(title) },
         text = {
             Column {
                 Text(
-                    "Use the Google account that should receive this device's backups. Sync runs hourly only when new changes exist.",
+                    "Choose the Google account that should be used. Sync runs hourly only when new changes exist.",
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
@@ -345,6 +597,72 @@ fun ConnectAccountDialog(
     )
 }
 
+@Composable
+private fun LinkGmailDialog(
+    accounts: List<String>,
+    alreadyLinked: Set<String>,
+    hub: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var manual by remember { mutableStateOf("") }
+    val candidates = accounts.filter { it !in alreadyLinked && !it.equals(hub, true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Link a staff Gmail") },
+        text = {
+            Column {
+                Text(
+                    "Pick a staff member's Gmail. Their phone will back up under their own account and feed into the main account.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                if (candidates.isNotEmpty()) {
+                    Text("Accounts on this device", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    candidates.take(6).forEach { email ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = LightSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onSelect(email) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = BrandPrimary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(email, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                OutlinedTextField(
+                    value = manual,
+                    onValueChange = { manual = it },
+                    label = { Text("Or type a Gmail address") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (manual.isNotBlank()) onSelect(manual.trim()) },
+                enabled = manual.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary)
+            ) { Text("Link") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
 /**
  * Provider-only setup. The owner never reaches this by normal navigation; it is
  * opened by a hidden long-press in Settings.
@@ -368,8 +686,6 @@ fun ProviderCloudScreen(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = LightSurface)
         ) {
-            // A dialog has its own window, so the content scrolls and keeps the
-            // focused field clear of the keyboard.
             Column(
                 modifier = Modifier
                     .padding(20.dp)
@@ -428,7 +744,7 @@ fun ProviderCloudScreen(
                     var accessCode by remember { mutableStateOf("") }
 
                     Text(
-                        "This controls cloud backup and Google Drive sync. The owner can only connect an account and press Backup/Sync.",
+                        "This controls cloud backup and Google Drive sync. The owner can only connect accounts and press Backup/Sync.",
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
@@ -511,3 +827,12 @@ fun ProviderCloudScreen(
 }
 
 private fun timestamp(value: Long): String = SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(Date(value))
+
+private fun driveTime(iso: String): String = runCatching {
+    // Drive returns e.g. "2026-09-03T10:30:00.000Z". Parse in UTC, then show in
+    // the device's local time so the hour-by-hour list is not off by the offset.
+    val parse = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+    parse.timeZone = java.util.TimeZone.getTimeZone("UTC")
+    val parsed = parse.parse(iso) ?: return@runCatching iso
+    SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(parsed)
+}.getOrDefault(iso)

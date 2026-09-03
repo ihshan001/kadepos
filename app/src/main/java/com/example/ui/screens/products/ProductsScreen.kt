@@ -65,6 +65,7 @@ fun ProductsScreen(
     }
 
     val products by viewModel.products.collectAsState()
+    val profile by viewModel.profile.collectAsState()
 
     // Child variant lines are stock lines, not separate catalogue cards. The
     // Items grid is the catalogue, so it always starts from parent rows only.
@@ -521,6 +522,7 @@ fun ProductsScreen(
             },
             categoryOptions = categoryOptions,
             subCategoryOptions = subCategoryOptionsByCategory,
+            shopTypeKey = profile?.shopTypeKey.orEmpty(),
             onSave = { request ->
                 viewModel.saveProduct(
                     id = request.id,
