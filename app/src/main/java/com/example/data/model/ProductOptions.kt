@@ -224,6 +224,35 @@ object ProductOptions {
     /** Names offered as one-tap suggestions for the second set. */
     val SUB_GROUP_NAME_SUGGESTIONS = listOf("Size", "Weight", "Length", "Pack")
 
+    /**
+     * One-tap colour choices for clothing & fashion shops. Tapping one adds it
+     * as a ready-made option so the owner never has to type "Black", "Green"…
+     * out by hand.
+     */
+    val CLOTHING_COLOURS = listOf(
+        "Black", "White", "Grey", "Navy", "Blue", "Red", "Green",
+        "Maroon", "Beige", "Brown", "Yellow", "Pink"
+    )
+
+    /** A ready-made set of sizes the owner can apply with one tap. */
+    data class SizePreset(val label: String, val sizes: List<String>)
+
+    /**
+     * Common size runs for clothing and footwear. Applying one hands every
+     * colour the same sizes to begin with; a colour that comes in fewer (or
+     * different) sizes is then trimmed or topped up in the size editor, which
+     * is exactly what "Black only comes in L and XL" needs.
+     */
+    val SIZE_PRESETS = listOf(
+        SizePreset("S–XXL", listOf("S", "M", "L", "XL", "XXL")),
+        SizePreset("XS–XL", listOf("XS", "S", "M", "L", "XL")),
+        SizePreset("Waist 32–40", listOf("32", "34", "36", "38", "40")),
+        SizePreset("Waist 28–42", listOf("28", "30", "32", "34", "36", "38", "40", "42")),
+        SizePreset("Collar 14.5–17", listOf("14.5", "15", "15.5", "16", "16.5", "17")),
+        SizePreset("Footwear 5–11", listOf("5", "6", "7", "8", "9", "10", "11")),
+        SizePreset("Kids 2–12", listOf("2", "4", "6", "8", "10", "12"))
+    )
+
     private const val OPTION_GROUP_NAME = "Option"
     private const val SIZE_GROUP_NAME = "Size"
 

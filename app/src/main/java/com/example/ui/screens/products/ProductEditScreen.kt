@@ -180,6 +180,12 @@ fun ProductEditScreen(
     categoryOptions: List<String> = emptyList(),
     /** Sub-categories per category, so the second list follows the first. */
     subCategoryOptions: Map<String, List<String>> = emptyMap(),
+    /**
+     * The active shop type key (GROCERY, CLOTHING, …). Clothing and footwear
+     * shops get one-tap colour and size presets so a trouser or shirt can be
+     * set up without typing every colour and size by hand.
+     */
+    shopTypeKey: String = "",
     onSave: (ProductSaveRequest) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -210,6 +216,7 @@ fun ProductEditScreen(
                         EasyMode(
                             form = form,
                             onChange = { form = it },
+                            shopTypeKey = shopTypeKey,
                             onSave = {
                                 buildRequest(form, product).let(onSave)
                             },
@@ -221,6 +228,7 @@ fun ProductEditScreen(
                             onChange = { form = it },
                             categoryOptions = categoryOptions,
                             subCategoryOptions = subCategoryOptions,
+                            shopTypeKey = shopTypeKey,
                             scrollState = scroll,
                             onSave = { buildRequest(form, product).let(onSave) },
                             onDelete = onDelete
@@ -485,6 +493,7 @@ private fun WizardButtons(
 private fun EasyMode(
     form: ProductForm,
     onChange: (ProductForm) -> Unit,
+    shopTypeKey: String,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -499,6 +508,7 @@ private fun EasyMode(
         2 -> FirstOptionsStep(
             form = form,
             onChange = onChange,
+            shopTypeKey = shopTypeKey,
             onBack = { onChange(form.copy(easyStep = 1)) },
             onNext = { step -> onChange(form.copy(easyStep = step)) }
         )
@@ -506,6 +516,7 @@ private fun EasyMode(
         3 -> SplitAgainStep(
             form = form,
             onChange = onChange,
+            shopTypeKey = shopTypeKey,
             onBack = { onChange(form.copy(easyStep = 2)) },
             onNext = { onChange(form.copy(easyStep = 4)) }
         )
@@ -633,6 +644,7 @@ private fun NameAndUnitStep(
 private fun FirstOptionsStep(
     form: ProductForm,
     onChange: (ProductForm) -> Unit,
+    shopTypeKey: String,
     onBack: () -> Unit,
     onNext: (Int) -> Unit
 ) {
@@ -837,6 +849,15 @@ private fun FirstOptionsStep(
                     )
                 }
 
+                if (isFashionShop(shopTypeKey)) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    QuickVariantPresets(
+                        form = form,
+                        onChange = onChange,
+                        showColours = true,
+                        showSizes = false
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -870,6 +891,7 @@ private fun FirstOptionsStep(
 private fun SplitAgainStep(
     form: ProductForm,
     onChange: (ProductForm) -> Unit,
+    shopTypeKey: String,
     onBack: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -960,6 +982,16 @@ private fun SplitAgainStep(
                         scrollState = scroll
                     )
                     Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                if (isFashionShop(shopTypeKey)) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    QuickVariantPresets(
+                        form = form,
+                        onChange = onChange,
+                        showColours = false,
+                        showSizes = true
+                    )
                 }
             }
 
@@ -1197,6 +1229,7 @@ private fun NormalMode(
     onChange: (ProductForm) -> Unit,
     categoryOptions: List<String>,
     subCategoryOptions: Map<String, List<String>>,
+    shopTypeKey: String,
     scrollState: ScrollState,
     onSave: () -> Unit,
     onDelete: (() -> Unit)?
@@ -1486,6 +1519,16 @@ private fun NormalMode(
                         )
                     }
 
+                    if (isFashionShop(shopTypeKey)) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        QuickVariantPresets(
+                            form = form,
+                            onChange = onChange,
+                            showColours = true,
+                            showSizes = true
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         "Every combination",
@@ -1703,13 +1746,14 @@ private fun BigChoiceButton(
 private fun SuggestionChip(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = if (selected) BrandPrimary else LightSurface,
         border = BorderStroke(1.dp, if (selected) BrandPrimary else LightBorder),
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = modifier.clickable(onClick = onClick)
     ) {
         Text(
             label,
@@ -1936,6 +1980,128 @@ private fun AddNameRow(
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(buttonText, fontSize = 12.sp)
+        }
+    }
+}
+
+/** True for shop types that sell sized, coloured stock (clothing, footwear). */
+private fun isFashionShop(shopTypeKey: String): Boolean =
+    shopTypeKey.equals("CLOTHING", ignoreCase = true) ||
+        shopTypeKey.equals("SHOES", ignoreCase = true)
+
+/**
+ * One-tap colours and size runs for clothing & fashion shops.
+ *
+ * Tapping a colour adds it as a ready-made option (tap again to remove);
+ * tapping a size set gives every existing option those sizes to begin with.
+ * The per-colour size editor is still there afterwards for the cases where
+ * "Black only comes in L and XL" — the presets just remove the typing.
+ */
+@Composable
+private fun QuickVariantPresets(
+    form: ProductForm,
+    onChange: (ProductForm) -> Unit,
+    showColours: Boolean = true,
+    showSizes: Boolean = true
+) {
+    val draft = form.options
+
+    if (showColours) {
+        Text("Quick colours", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(
+            "Tap a colour to add it as an option. Tap again to remove it.",
+            fontSize = 11.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ProductOptions.CLOTHING_COLOURS.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                row.forEach { colour ->
+                    val exists = draft.options.any { it.name.equals(colour, ignoreCase = true) }
+                    SuggestionChip(
+                        label = colour,
+                        selected = exists,
+                        onClick = {
+                            if (exists) {
+                                onChange(
+                                    form.updateOptions(
+                                        draft.copy(
+                                            options = draft.options.filterNot {
+                                                it.name.equals(colour, ignoreCase = true)
+                                            }
+                                        )
+                                    )
+                                )
+                            } else {
+                                onChange(
+                                    form.updateOptions(
+                                        draft.copy(
+                                            options = draft.options + ProductOptionDraft(
+                                                name = colour,
+                                                price = form.priceValue
+                                            )
+                                        )
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (row.size < 4) {
+                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+
+    if (showSizes) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Text("Quick sizes", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(
+            "Tap a size set to give every colour those sizes. Refine each colour after.",
+            fontSize = 11.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ProductOptions.SIZE_PRESETS.forEach { preset ->
+                SuggestionChip(
+                    label = preset.label,
+                    selected = false,
+                    onClick = {
+                        onChange(
+                            form.updateOptions(
+                                draft.copy(
+                                    options = draft.options.map { option ->
+                                        val added = preset.sizes
+                                            .filter { size ->
+                                                option.subOptions.none { it.name.equals(size, ignoreCase = true) }
+                                            }
+                                            .map { size ->
+                                                ProductSubOptionDraft(
+                                                    name = size,
+                                                    price = if (option.price > 0.0) option.price else form.priceValue
+                                                )
+                                            }
+                                        option.copy(subOptions = option.subOptions + added)
+                                    }
+                                )
+                            )
+                        )
+                    }
+                )
+            }
         }
     }
 }
