@@ -235,6 +235,12 @@ data class StaffEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val phone: String = "",
+    /**
+     * The staff member's own Gmail. A cashier signs in with their own account
+     * for cloud backup instead of the owner's, so the owner's password never
+     * leaves the owner's phone.
+     */
+    val email: String = "",
     val role: String = "Cashier", // Owner, Manager, Supervisor, Cashier
     val pin: String = "",
     val isActive: Boolean = true,

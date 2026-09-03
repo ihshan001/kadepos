@@ -1587,6 +1587,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         role: String,
         pin: String,
         isActive: Boolean,
+        email: String = "",
         extra: Set<Permission>? = null,
         revoked: Set<Permission>? = null
     ) {
@@ -1631,6 +1632,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                         role = role,
                         pin = pin.ifBlank { existing.pin },
                         isActive = isActive,
+                        email = email.trim(),
                         extraPermissions = encoded?.first ?: existing.extraPermissions,
                         revokedPermissions = encoded?.second ?: existing.revokedPermissions
                     )
@@ -1645,6 +1647,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                         role = role,
                         pin = pin,
                         isActive = isActive,
+                        email = email.trim(),
                         extraPermissions = encoded?.first.orEmpty(),
                         revokedPermissions = encoded?.second.orEmpty()
                     )
@@ -2104,19 +2107,31 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     /** Re-reads the provider policy and keeps the hourly/daily workers in step. */
     fun refreshCloud() {
         val settings = cloudRepo.load()
-        _cloudSettings.value = settings
+        // The shared Drive folder is keyed by the shop name, which the owner
+        // can rename in Settings. Keep it in step so every device still lands
+        // in the same folder after a rename. (May be blank on the very first
+        // call before the profile flow is populated; the next refresh, e.g.
+        // when the Backup screen opens, sets it.)
+        val shopName = profile.value?.name.orEmpty()
+        val withShopKey = if (shopName.isNotBlank()) {
+            settings.copy(shopKey = cloudRepo.shopKeyFor(shopName))
+        } else {
+            settings
+        }
+        if (withShopKey != settings) cloudRepo.save(withShopKey)
+        _cloudSettings.value = withShopKey
         // The provider switch and the owner's own switch must both be on.
-        if (!settings.providerEnabled || !settings.ownerBackupEnabled) {
+        if (!withShopKey.providerEnabled || !withShopKey.ownerBackupEnabled) {
             CloudSyncScheduler.cancel(appContext)
             return
         }
         // Never cancel a manual sync when the screen is merely refreshed.
-        if (settings.hourlySyncEnabled) {
+        if (withShopKey.hourlySyncEnabled) {
             CloudSyncScheduler.schedule(appContext)
         } else {
             CloudSyncScheduler.cancelHourly(appContext)
         }
-        if (settings.dailyBackupEnabled) {
+        if (withShopKey.dailyBackupEnabled) {
             CloudSyncScheduler.scheduleDailyBackup(appContext)
         } else {
             CloudSyncScheduler.cancelDaily(appContext)
@@ -2163,13 +2178,18 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Sync queued. It runs as soon as this phone is online.")
     }
 
-    /** Owner-visible action: choose the Gmail that receives this device's backups. */
+    /**
+     * Owner-visible action: choose the Gmail this device signs in with for
+     * backup. The first account connected also becomes the hub (the owner's
+     * main store) when no hub is set yet.
+     */
     fun setOwnerGmail(email: String) {
         val clean = email.trim()
         if (clean.isBlank()) return
         val updated = cloudRepo.update {
             it.copy(
                 ownerGmail = clean,
+                hubGmail = it.hubGmail.ifBlank { clean },
                 accountConnected = true,
                 lastError = ""
             )
@@ -2182,6 +2202,63 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             audit("SETTINGS", "Connected Google account ${clean.take(6)}… for backup", 0.0)
         }
+    }
+
+    /**
+     * Sets the owner's main Gmail — the single store of the whole shop's data.
+     * Staff phones still sign in with their own linked accounts; this is the
+     * account they all feed into.
+     */
+    fun setHubGmail(email: String) {
+        val clean = email.trim()
+        if (clean.isBlank()) return
+        val updated = cloudRepo.update {
+            it.copy(hubGmail = clean, lastError = "")
+        }
+        _cloudSettings.value = updated
+        showMessage("Main Google account set")
+        viewModelScope.launch {
+            audit("SETTINGS", "Set main Google account ${clean.take(6)}… for cloud", 0.0)
+        }
+    }
+
+    /** Staff Gmails linked to the shop's shared backup. */
+    fun linkedGmails(): List<String> = _cloudSettings.value.linkedEmails()
+
+    /** Authorise one staff Gmail to feed the shared backup. */
+    fun linkGmail(email: String) {
+        val clean = email.trim()
+        if (clean.isBlank()) return
+        val updated = cloudRepo.update { it.withLinkedEmail(clean).copy(lastError = "") }
+        _cloudSettings.value = updated
+        showMessage("Linked $clean")
+        viewModelScope.launch {
+            audit("SETTINGS", "Linked Google account ${clean.take(6)}… to cloud backup", 0.0)
+        }
+    }
+
+    /** Remove a staff Gmail from the shared backup. */
+    fun unlinkGmail(email: String) {
+        val updated = cloudRepo.update { it.withoutLinkedEmail(email) }
+        _cloudSettings.value = updated
+        showMessage("Removed ${email.trim()}")
+    }
+
+    /** The recent syncs already on this phone, newest first (works offline). */
+    fun localSyncHistory(): List<com.example.data.cloud.CloudSyncEvent> =
+        _cloudSettings.value.syncEvents()
+
+    /**
+     * Lists the hour-by-hour snapshots in the shared Drive folder. Uses the
+     * hub account when set, otherwise this device's account. Returns null when
+     * the folder cannot be read yet (no account, or access not approved).
+     */
+    suspend fun fetchDriveSnapshots(): List<com.example.data.cloud.GoogleDriveCloudTransport.DriveFileInfo>? {
+        val settings = _cloudSettings.value
+        val account = settings.hub().ifBlank { return null }
+        val transport = com.example.data.cloud.GoogleDriveCloudTransport(appContext)
+        val token = transport.accessToken(account) ?: return null
+        return transport.listSnapshots(token, settings.shopKey.ifBlank { cloudRepo.shopKeyFor("") })
     }
 
     /** Providers only. Writes the master policy/access code. Returns false when required provider info is missing. */
