@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ProductEntity
 import com.example.data.model.ProductOptionDraft
+import com.example.data.model.ProductOptionPresets
 import com.example.data.model.ProductOptions
 import com.example.data.model.ProductOptionsDraft
 import com.example.data.model.ProductSubOptionDraft
@@ -849,15 +850,15 @@ private fun FirstOptionsStep(
                     )
                 }
 
-                if (isFashionShop(shopTypeKey)) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    QuickVariantPresets(
-                        form = form,
-                        onChange = onChange,
-                        showColours = true,
-                        showSizes = false
-                    )
-                }
+                Spacer(modifier = Modifier.height(16.dp))
+                QuickVariantPresets(
+                    form = form,
+                    onChange = onChange,
+                    shopTypeKey = shopTypeKey,
+                    category = form.category,
+                    showChoices = true,
+                    showRuns = false
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -984,15 +985,15 @@ private fun SplitAgainStep(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                if (isFashionShop(shopTypeKey)) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    QuickVariantPresets(
-                        form = form,
-                        onChange = onChange,
-                        showColours = false,
-                        showSizes = true
-                    )
-                }
+                Spacer(modifier = Modifier.height(4.dp))
+                QuickVariantPresets(
+                    form = form,
+                    onChange = onChange,
+                    shopTypeKey = shopTypeKey,
+                    category = form.category,
+                    showChoices = false,
+                    showRuns = true
+                )
             }
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -1519,15 +1520,15 @@ private fun NormalMode(
                         )
                     }
 
-                    if (isFashionShop(shopTypeKey)) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        QuickVariantPresets(
-                            form = form,
-                            onChange = onChange,
-                            showColours = true,
-                            showSizes = true
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    QuickVariantPresets(
+                        form = form,
+                        onChange = onChange,
+                        shopTypeKey = shopTypeKey,
+                        category = form.category,
+                        showChoices = true,
+                        showRuns = true
+                    )
 
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
@@ -1984,126 +1985,205 @@ private fun AddNameRow(
     }
 }
 
-/** True for shop types that sell sized, coloured stock (clothing, footwear). */
-private fun isFashionShop(shopTypeKey: String): Boolean =
-    shopTypeKey.equals("CLOTHING", ignoreCase = true) ||
-        shopTypeKey.equals("SHOES", ignoreCase = true)
-
 /**
- * One-tap colours and size runs for clothing & fashion shops.
+ * Ready-made options for the current shop type.
  *
- * Tapping a colour adds it as a ready-made option (tap again to remove);
- * tapping a size set gives every existing option those sizes to begin with.
- * The per-colour size editor is still there afterwards for the cases where
- * "Black only comes in L and XL" — the presets just remove the typing.
+ * **Choices** ([showChoices]) appear as tap-to-add chips; tapping again removes
+ * the option. **Runs** ([showRuns]) appear as collapsible groups that expand
+ * into individual value chips — tick each one to give every option that value,
+ * untick to remove it. The per-option / per-size editors remain for the cases
+ * where one choice comes in fewer sizes ("Black only comes in L and XL").
+ *
+ * A shop type with no presets simply renders nothing.
  */
 @Composable
 private fun QuickVariantPresets(
     form: ProductForm,
     onChange: (ProductForm) -> Unit,
-    showColours: Boolean = true,
-    showSizes: Boolean = true
+    shopTypeKey: String,
+    category: String = "",
+    showChoices: Boolean = true,
+    showRuns: Boolean = true
 ) {
+    val presets = ProductOptionPresets.presetsFor(shopTypeKey, category)
+    if (presets.isEmpty) return
     val draft = form.options
 
-    if (showColours) {
-        Text("Quick colours", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+    if (showChoices && presets.choices.isNotEmpty()) {
+        Text("Quick choices", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Text(
-            "Tap a colour to add it as an option. Tap again to remove it.",
+            "Tap a choice to add it as an option. Tap again to remove it.",
             fontSize = 11.sp,
             color = TextSecondary
         )
         Spacer(modifier = Modifier.height(6.dp))
-        ProductOptions.CLOTHING_COLOURS.chunked(4).forEach { row ->
-            Row(
+        presets.choices.forEach { set ->
+            Text(set.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            set.choices.chunked(4).forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    row.forEach { choice ->
+                        val exists = draft.options.any { it.name.equals(choice, ignoreCase = true) }
+                        SuggestionChip(
+                            label = choice,
+                            selected = exists,
+                            onClick = { onChange(form.toggleChoice(set, choice)) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (row.size < 4) {
+                        repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    if (showRuns && presets.runs.isNotEmpty()) {
+        if (showChoices && presets.choices.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+        Text("Quick sets", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(
+            "Open a set, then tick the sizes to give every option those sizes.",
+            fontSize = 11.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        var expandedKey by remember { mutableStateOf<String?>(null) }
+        val activeKey = expandedKey ?: presets.runs.first().key
+
+        presets.runs.forEach { run ->
+            val expanded = activeKey == run.key
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (expanded) BrandSurface else LightSurfaceVariant,
+                border = BorderStroke(1.dp, if (expanded) BrandPrimary else LightBorder),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    .padding(vertical = 3.dp)
             ) {
-                row.forEach { colour ->
-                    val exists = draft.options.any { it.name.equals(colour, ignoreCase = true) }
-                    SuggestionChip(
-                        label = colour,
-                        selected = exists,
-                        onClick = {
-                            if (exists) {
-                                onChange(
-                                    form.updateOptions(
-                                        draft.copy(
-                                            options = draft.options.filterNot {
-                                                it.name.equals(colour, ignoreCase = true)
-                                            }
-                                        )
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expandedKey = if (expanded) null else run.key }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                run.label,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "applies to every option · ${run.values.size} values",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.Add,
+                            contentDescription = null,
+                            tint = BrandPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    if (expanded) {
+                        HorizontalDivider(color = LightBorder)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        run.values.chunked(4).forEach { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                row.forEach { value ->
+                                    val allHave = draft.options.isNotEmpty() &&
+                                        draft.options.all { option ->
+                                            option.subOptions.any { it.name.equals(value, ignoreCase = true) }
+                                        }
+                                    SuggestionChip(
+                                        label = value,
+                                        selected = allHave,
+                                        onClick = { onChange(form.toggleRunValue(run, value)) },
+                                        modifier = Modifier.weight(1f)
                                     )
-                                )
-                            } else {
-                                onChange(
-                                    form.updateOptions(
-                                        draft.copy(
-                                            options = draft.options + ProductOptionDraft(
-                                                name = colour,
-                                                price = form.priceValue
-                                            )
-                                        )
-                                    )
-                                )
+                                }
+                                if (row.size < 4) {
+                                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                                }
                             }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                if (row.size < 4) {
-                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
         }
     }
+}
 
-    if (showSizes) {
-        Spacer(modifier = Modifier.height(10.dp))
-        Text("Quick sizes", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Text(
-            "Tap a size set to give every colour those sizes. Refine each colour after.",
-            fontSize = 11.sp,
-            color = TextSecondary
+/** Adds a ready-made choice as an option, or removes it if it already exists. */
+private fun ProductForm.toggleChoice(
+    set: ProductOptionPresets.ChoiceSet,
+    name: String
+): ProductForm {
+    val draft = options
+    return if (draft.options.any { it.name.equals(name, ignoreCase = true) }) {
+        updateOptions(draft.copy(options = draft.options.filterNot { it.name.equals(name, ignoreCase = true) }))
+    } else {
+        updateOptions(
+            draft.copy(
+                groupName = draft.groupName.ifBlank { set.groupName },
+                options = draft.options + ProductOptionDraft(
+                    name = name,
+                    price = priceValue
+                )
+            )
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ProductOptions.SIZE_PRESETS.forEach { preset ->
-                SuggestionChip(
-                    label = preset.label,
-                    selected = false,
-                    onClick = {
-                        onChange(
-                            form.updateOptions(
-                                draft.copy(
-                                    options = draft.options.map { option ->
-                                        val added = preset.sizes
-                                            .filter { size ->
-                                                option.subOptions.none { it.name.equals(size, ignoreCase = true) }
-                                            }
-                                            .map { size ->
-                                                ProductSubOptionDraft(
-                                                    name = size,
-                                                    price = if (option.price > 0.0) option.price else form.priceValue
-                                                )
-                                            }
-                                        option.copy(subOptions = option.subOptions + added)
-                                    }
-                                )
+    }
+}
+
+/** Adds a ready-made size to every option, or removes it from all of them. */
+private fun ProductForm.toggleRunValue(
+    run: ProductOptionPresets.RunSet,
+    value: String
+): ProductForm {
+    val draft = options
+    val allHave = draft.options.isNotEmpty() &&
+        draft.options.all { option -> option.subOptions.any { it.name.equals(value, ignoreCase = true) } }
+    return updateOptions(
+        draft.copy(
+            subGroupName = draft.subGroupName.ifBlank { run.subGroupName },
+            options = draft.options.map { option ->
+                if (allHave) {
+                    option.copy(subOptions = option.subOptions.filterNot { it.name.equals(value, ignoreCase = true) })
+                } else {
+                    if (option.subOptions.any { it.name.equals(value, ignoreCase = true) }) {
+                        option
+                    } else {
+                        option.copy(
+                            subOptions = option.subOptions + ProductSubOptionDraft(
+                                name = value,
+                                price = if (option.price > 0.0) option.price else priceValue
                             )
                         )
                     }
-                )
+                }
             }
-        }
-    }
+        )
+    )
 }
 
 @Composable
