@@ -72,6 +72,15 @@ fun CloudBackupScreen(
 
     LaunchedEffect(Unit) { viewModel.refreshCloud() }
 
+    // Fetch the live Drive folder whenever a refresh is requested.
+    LaunchedEffect(driveSnapshots, loadingDrive) {
+        if (loadingDrive) {
+            val files = viewModel.fetchDriveSnapshots()
+            driveSnapshots = files
+            loadingDrive = false
+        }
+    }
+
     fun requestAccountPermission() {
         val granted = ContextCompat.checkSelfPermission(
             context,
@@ -292,13 +301,6 @@ fun CloudBackupScreen(
                             driveSnapshots = null
                         }
                     )
-                    LaunchedEffect(driveSnapshots, loadingDrive) {
-                        if (loadingDrive) {
-                            val files = viewModel.fetchDriveSnapshots()
-                            driveSnapshots = files
-                            loadingDrive = false
-                        }
-                    }
                 }
 
                 item {
@@ -827,7 +829,10 @@ fun ProviderCloudScreen(
 private fun timestamp(value: Long): String = SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(Date(value))
 
 private fun driveTime(iso: String): String = runCatching {
-    // Drive returns e.g. "2026-09-03T10:30:00.000Z"; show just the readable time.
-    val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(iso)
-    if (parsed == null) iso else SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(parsed)
+    // Drive returns e.g. "2026-09-03T10:30:00.000Z". Parse in UTC, then show in
+    // the device's local time so the hour-by-hour list is not off by the offset.
+    val parse = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+    parse.timeZone = java.util.TimeZone.getTimeZone("UTC")
+    val parsed = parse.parse(iso) ?: return@runCatching iso
+    SimpleDateFormat("EEE, d MMM, h:mm a", Locale.getDefault()).format(parsed)
 }.getOrDefault(iso)

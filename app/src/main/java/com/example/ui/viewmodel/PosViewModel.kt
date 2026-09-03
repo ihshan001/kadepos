@@ -2107,34 +2107,33 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     /** Re-reads the provider policy and keeps the hourly/daily workers in step. */
     fun refreshCloud() {
         val settings = cloudRepo.load()
-        // The shared Drive folder is keyed by the shop name, which the owner
-        // can rename in Settings. Keep it in step so every device still lands
-        // in the same folder after a rename. (May be blank on the very first
-        // call before the profile flow is populated; the next refresh, e.g.
-        // when the Backup screen opens, sets it.)
-        val shopName = profile.value?.name.orEmpty()
-        val withShopKey = if (shopName.isNotBlank()) {
-            settings.copy(shopKey = cloudRepo.shopKeyFor(shopName))
-        } else {
-            settings
-        }
-        if (withShopKey != settings) cloudRepo.save(withShopKey)
-        _cloudSettings.value = withShopKey
+        _cloudSettings.value = settings
         // The provider switch and the owner's own switch must both be on.
-        if (!withShopKey.providerEnabled || !withShopKey.ownerBackupEnabled) {
+        if (!settings.providerEnabled || !settings.ownerBackupEnabled) {
             CloudSyncScheduler.cancel(appContext)
-            return
-        }
-        // Never cancel a manual sync when the screen is merely refreshed.
-        if (withShopKey.hourlySyncEnabled) {
-            CloudSyncScheduler.schedule(appContext)
         } else {
-            CloudSyncScheduler.cancelHourly(appContext)
+            // Never cancel a manual sync when the screen is merely refreshed.
+            if (settings.hourlySyncEnabled) {
+                CloudSyncScheduler.schedule(appContext)
+            } else {
+                CloudSyncScheduler.cancelHourly(appContext)
+            }
+            if (settings.dailyBackupEnabled) {
+                CloudSyncScheduler.scheduleDailyBackup(appContext)
+            } else {
+                CloudSyncScheduler.cancelDaily(appContext)
+            }
         }
-        if (withShopKey.dailyBackupEnabled) {
-            CloudSyncScheduler.scheduleDailyBackup(appContext)
-        } else {
-            CloudSyncScheduler.cancelDaily(appContext)
+        // The shared Drive folder is keyed by the shop name, which the owner
+        // can rename in Settings. Read it from Room asynchronously: refreshCloud
+        // is called during construction (init), before the profile StateFlow is
+        // initialized, so a synchronous `profile.value` would crash on launch.
+        viewModelScope.launch {
+            val name = repository.getProfileSync()?.name.orEmpty()
+            if (name.isNotBlank()) {
+                val updated = cloudRepo.update { it.copy(shopKey = cloudRepo.shopKeyFor(name)) }
+                _cloudSettings.value = updated
+            }
         }
     }
 
@@ -2222,9 +2221,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Staff Gmails linked to the shop's shared backup. */
-    fun linkedGmails(): List<String> = _cloudSettings.value.linkedEmails()
-
     /** Authorise one staff Gmail to feed the shared backup. */
     fun linkGmail(email: String) {
         val clean = email.trim()
@@ -2243,10 +2239,6 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         _cloudSettings.value = updated
         showMessage("Removed ${email.trim()}")
     }
-
-    /** The recent syncs already on this phone, newest first (works offline). */
-    fun localSyncHistory(): List<com.example.data.cloud.CloudSyncEvent> =
-        _cloudSettings.value.syncEvents()
 
     /**
      * Lists the hour-by-hour snapshots in the shared Drive folder. Uses the

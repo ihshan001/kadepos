@@ -108,7 +108,7 @@ class GoogleDriveCloudTransport(private val context: Context) {
             // A staff phone writes under its own account; hand the file to the
             // hub so the owner's Drive shows it too.
             if (shareWith.isNotBlank() && !shareWith.equals(uploaderEmail, ignoreCase = true)) {
-                shareWith(token, uploaded.id, shareWith)
+                grantWriterAccess(token, uploaded.id, shareWith)
             }
             uploaded
         }.getOrNull()
@@ -176,7 +176,7 @@ class GoogleDriveCloudTransport(private val context: Context) {
      * Grants [email] writer access to a file this app created. Best effort —
      * a failure here must never fail the backup itself.
      */
-    private fun shareWith(token: String, fileId: String, email: String) {
+    private fun grantWriterAccess(token: String, fileId: String, email: String) {
         runCatching {
             val body = JSONObject().apply {
                 put("role", "writer")
