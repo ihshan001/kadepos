@@ -46,11 +46,25 @@ object ProductOptionPresets {
         val categoryHints: List<String> = emptyList()
     )
 
+    /**
+     * A brand and the models it comes in — the "iPhone → 11/12/13…" shape that
+     * a flat choice list or a run cannot express. Tapping a model attaches it
+     * as a second-level option of the brand's first-level option, creating the
+     * brand option on the way if it does not exist yet.
+     */
+    data class ModelPack(
+        val key: String,
+        /** The option name this pack attaches to, e.g. "iPhone" or "Samsung". */
+        val brand: String,
+        val models: List<String>
+    )
+
     data class ShopPresets(
         val choices: List<ChoiceSet>,
-        val runs: List<RunSet>
+        val runs: List<RunSet>,
+        val modelPacks: List<ModelPack> = emptyList()
     ) {
-        val isEmpty: Boolean get() = choices.isEmpty() && runs.isEmpty()
+        val isEmpty: Boolean get() = choices.isEmpty() && runs.isEmpty() && modelPacks.isEmpty()
     }
 
     /**
@@ -64,9 +78,47 @@ object ProductOptionPresets {
         fun match(hints: List<String>) = hints.any { cat.contains(it.lowercase()) }
         return ShopPresets(
             choices = base.choices.sortedBy { if (match(it.categoryHints)) 0 else 1 },
-            runs = base.runs.sortedBy { if (match(it.categoryHints)) 0 else 1 }
+            runs = base.runs.sortedBy { if (match(it.categoryHints)) 0 else 1 },
+            modelPacks = base.modelPacks
         )
     }
+
+    // ------------------------------------------------------------------
+    // Shared phone model packs (used by Electronics and Repair).
+    // ------------------------------------------------------------------
+
+    private val PHONE_MODEL_PACKS = listOf(
+        ModelPack("iphone", "iPhone", listOf(
+            "11", "11 Pro", "12", "12 Pro", "13", "13 Pro",
+            "14", "14 Pro", "15", "15 Pro", "16", "16 Pro"
+        )),
+        ModelPack("samsung", "Samsung", listOf(
+            "Galaxy A15", "Galaxy A35", "Galaxy A55",
+            "Galaxy S22", "Galaxy S23", "Galaxy S24", "Galaxy S25"
+        )),
+        ModelPack("xiaomi", "Xiaomi", listOf(
+            "Redmi Note 12", "Redmi Note 13", "Redmi Note 14",
+            "Poco X6", "Xiaomi 13", "Xiaomi 14"
+        )),
+        ModelPack("oppo", "Oppo", listOf(
+            "A38", "A58", "Reno 8", "Reno 11", "Reno 12"
+        )),
+        ModelPack("vivo", "Vivo", listOf(
+            "Y17", "Y27", "Y36", "V29", "V30"
+        )),
+        ModelPack("realme", "Realme", listOf(
+            "C53", "C65", "Narzo 60", "11 Pro", "12 Pro"
+        )),
+        ModelPack("huawei", "Huawei", listOf(
+            "Nova 11", "Nova 12", "P60", "Mate 60"
+        )),
+        ModelPack("oneplus", "OnePlus", listOf(
+            "Nord 3", "Nord 4", "11", "12"
+        )),
+        ModelPack("pixel", "Google Pixel", listOf(
+            "Pixel 7", "Pixel 8", "Pixel 9"
+        ))
+    )
 
     // ------------------------------------------------------------------
     // The catalogue. Choice sets come first, then runs, per shop type.
@@ -167,6 +219,11 @@ object ProductOptionPresets {
         ),
         "ELECTRONICS" to ShopPresets(
             choices = listOf(
+                ChoiceSet("brand", "Quick brands", "Brand",
+                    listOf("Apple", "Samsung", "Xiaomi", "Oppo", "Vivo", "Realme",
+                        "OnePlus", "Huawei", "Google Pixel", "Nokia",
+                        "Anker", "JBL", "Sony", "Baseus", "boAt"),
+                    listOf("case", "cover", "glass", "earbud", "charger", "cable", "speaker")),
                 ChoiceSet("colour", "Quick colours", "Colour",
                     listOf("Black", "White", "Grey", "Blue", "Red", "Green")),
                 ChoiceSet("storage", "Quick storage", "Storage",
@@ -185,7 +242,8 @@ object ProductOptionPresets {
                     listOf("9W", "12W", "15W", "20W"),
                     listOf("bulb", "led", "light"))
             ),
-            runs = emptyList()
+            runs = emptyList(),
+            modelPacks = PHONE_MODEL_PACKS
         ),
         "STATIONERY" to ShopPresets(
             choices = listOf(
@@ -227,7 +285,8 @@ object ProductOptionPresets {
         "REPAIR" to ShopPresets(
             choices = listOf(
                 ChoiceSet("brand", "Quick device brands", "Brand",
-                    listOf("iPhone", "Samsung", "Xiaomi", "Oppo", "Vivo", "Realme", "Huawei", "Other"),
+                    listOf("iPhone", "Samsung", "Xiaomi", "Oppo", "Vivo", "Realme",
+                        "Huawei", "OnePlus", "Google Pixel", "Nokia", "iPad / Tablet", "Other"),
                     listOf("screen", "battery", "replacement", "repair", "port")),
                 ChoiceSet("storage", "Quick storage", "Storage",
                     listOf("32GB", "64GB", "128GB", "256GB"),
@@ -239,7 +298,8 @@ object ProductOptionPresets {
                     listOf("Original", "High Copy", "Compatible"),
                     listOf("screen", "battery", "part", "replacement"))
             ),
-            runs = emptyList()
+            runs = emptyList(),
+            modelPacks = PHONE_MODEL_PACKS
         ),
         "FLOWERS" to ShopPresets(
             choices = listOf(

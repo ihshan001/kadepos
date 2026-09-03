@@ -857,7 +857,8 @@ private fun FirstOptionsStep(
                     shopTypeKey = shopTypeKey,
                     category = form.category,
                     showChoices = true,
-                    showRuns = false
+                    showRuns = false,
+                    showModels = false
                 )
             }
 
@@ -992,7 +993,8 @@ private fun SplitAgainStep(
                     shopTypeKey = shopTypeKey,
                     category = form.category,
                     showChoices = false,
-                    showRuns = true
+                    showRuns = true,
+                    showModels = true
                 )
             }
 
@@ -1527,7 +1529,8 @@ private fun NormalMode(
                         shopTypeKey = shopTypeKey,
                         category = form.category,
                         showChoices = true,
-                        showRuns = true
+                        showRuns = true,
+                        showModels = true
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -1991,10 +1994,12 @@ private fun AddNameRow(
  * **Choices** ([showChoices]) appear as tap-to-add chips; tapping again removes
  * the option. **Runs** ([showRuns]) appear as collapsible groups that expand
  * into individual value chips — tick each one to give every option that value,
- * untick to remove it. The per-option / per-size editors remain for the cases
- * where one choice comes in fewer sizes ("Black only comes in L and XL").
+ * untick to remove it. **Models** ([showModels]) are brand → model packs
+ * ("iPhone → 11/12/13…") that create the brand option and attach models to it.
  *
- * A shop type with no presets simply renders nothing.
+ * The per-option / per-size editors remain for the cases where one choice comes
+ * in fewer sizes ("Black only comes in L and XL"). A shop type with no presets
+ * simply renders nothing.
  */
 @Composable
 private fun QuickVariantPresets(
@@ -2003,7 +2008,8 @@ private fun QuickVariantPresets(
     shopTypeKey: String,
     category: String = "",
     showChoices: Boolean = true,
-    showRuns: Boolean = true
+    showRuns: Boolean = true,
+    showModels: Boolean = true
 ) {
     val presets = ProductOptionPresets.presetsFor(shopTypeKey, category)
     if (presets.isEmpty) return
@@ -2057,11 +2063,10 @@ private fun QuickVariantPresets(
         )
         Spacer(modifier = Modifier.height(6.dp))
 
-        var expandedKey by remember { mutableStateOf<String?>(null) }
-        val activeKey = expandedKey ?: presets.runs.first().key
+        var expandedKey by remember { mutableStateOf<String?>(presets.runs.first().key) }
 
         presets.runs.forEach { run ->
-            val expanded = activeKey == run.key
+            val expanded = expandedKey == run.key
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (expanded) BrandSurface else LightSurfaceVariant,
@@ -2132,6 +2137,111 @@ private fun QuickVariantPresets(
             }
         }
     }
+
+    if (showModels && presets.modelPacks.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Text("Quick models", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(
+            "Open a brand and tick the models it comes in.",
+            fontSize = 11.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        var expandedModel by remember { mutableStateOf<String?>(presets.modelPacks.first().key) }
+
+        presets.modelPacks.forEach { pack ->
+            val brand = draft.options.firstOrNull { it.name.equals(pack.brand, ignoreCase = true) }
+            val chosenCount = brand?.subOptions
+                ?.count { sub -> pack.models.any { it.equals(sub.name, ignoreCase = true) } } ?: 0
+            val expanded = expandedModel == pack.key
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (expanded) BrandSurface else LightSurfaceVariant,
+                border = BorderStroke(1.dp, if (expanded) BrandPrimary else LightBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expandedModel = if (expanded) null else pack.key }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                pack.brand,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "$chosenCount of ${pack.models.size} models chosen",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.Add,
+                            contentDescription = null,
+                            tint = BrandPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    if (expanded) {
+                        HorizontalDivider(color = LightBorder)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val allPresent = brand != null &&
+                            pack.models.all { m -> brand.subOptions.any { it.name.equals(m, ignoreCase = true) } }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SuggestionChip(
+                                label = if (allPresent) "Clear all" else "Add all",
+                                selected = false,
+                                onClick = { onChange(form.toggleAllModels(pack)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.weight(3f))
+                        }
+
+                        pack.models.chunked(4).forEach { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                row.forEach { model ->
+                                    val selected = brand?.subOptions
+                                        ?.any { it.name.equals(model, ignoreCase = true) } == true
+                                    SuggestionChip(
+                                        label = model,
+                                        selected = selected,
+                                        onClick = { onChange(form.toggleModel(pack, model)) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (row.size < 4) {
+                                    repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Adds a ready-made choice as an option, or removes it if it already exists. */
@@ -2182,6 +2292,75 @@ private fun ProductForm.toggleRunValue(
                     }
                 }
             }
+        )
+    )
+}
+
+/** Adds a brand's option (if missing) so a model has somewhere to attach. */
+private fun ProductOptionsDraft.withBrand(
+    pack: ProductOptionPresets.ModelPack,
+    basePrice: Double
+): ProductOptionsDraft {
+    if (options.any { it.name.equals(pack.brand, ignoreCase = true) }) return this
+    return copy(
+        groupName = groupName.ifBlank { "Brand" },
+        options = options + ProductOptionDraft(name = pack.brand, price = basePrice)
+    )
+}
+
+/** Adds or removes one model on its brand's option, creating the brand as needed. */
+private fun ProductForm.toggleModel(
+    pack: ProductOptionPresets.ModelPack,
+    model: String
+): ProductForm {
+    val base = options.withBrand(pack, priceValue)
+    val brand = base.options.first { it.name.equals(pack.brand, ignoreCase = true) }
+    val has = brand.subOptions.any { it.name.equals(model, ignoreCase = true) }
+    val updatedBrand = if (has) {
+        brand.copy(subOptions = brand.subOptions.filterNot { it.name.equals(model, ignoreCase = true) })
+    } else {
+        brand.copy(
+            subOptions = brand.subOptions + ProductSubOptionDraft(
+                name = model,
+                price = if (brand.price > 0.0) brand.price else priceValue
+            )
+        )
+    }
+    return updateOptions(
+        base.copy(
+            subGroupName = base.subGroupName.ifBlank { "Model" },
+            options = base.options.map { if (it.name.equals(pack.brand, ignoreCase = true)) updatedBrand else it }
+        )
+    )
+}
+
+/** Adds every model of a pack, or removes them all if they are already present. */
+private fun ProductForm.toggleAllModels(pack: ProductOptionPresets.ModelPack): ProductForm {
+    val base = options.withBrand(pack, priceValue)
+    val brand = base.options.first { it.name.equals(pack.brand, ignoreCase = true) }
+    val allPresent = pack.models.all { m -> brand.subOptions.any { it.name.equals(m, ignoreCase = true) } }
+    val updatedBrand = if (allPresent) {
+        brand.copy(
+            subOptions = brand.subOptions.filterNot { sub ->
+                pack.models.any { it.equals(sub.name, ignoreCase = true) }
+            }
+        )
+    } else {
+        val existing = brand.subOptions.map { it.name.lowercase() }.toSet()
+        val toAdd = pack.models
+            .filter { it.lowercase() !in existing }
+            .map { m ->
+                ProductSubOptionDraft(
+                    name = m,
+                    price = if (brand.price > 0.0) brand.price else priceValue
+                )
+            }
+        brand.copy(subOptions = brand.subOptions + toAdd)
+    }
+    return updateOptions(
+        base.copy(
+            subGroupName = base.subGroupName.ifBlank { "Model" },
+            options = base.options.map { if (it.name.equals(pack.brand, ignoreCase = true)) updatedBrand else it }
         )
     )
 }
